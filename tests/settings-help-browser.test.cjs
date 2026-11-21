@@ -51,7 +51,16 @@ test('welcome account returns to unsaved profile; local play has no cloud reques
  await context.route('https://geurlwivdiqboylciqhl.supabase.co/**',route=>{requests.push(route.request().url());return route.abort();});
  try{
   if(process.env.PLAYROOM_TEST_ARTIFACT){await page.route(server.url,r=>r.fulfill({contentType:'text/html',body:require('node:fs').readFileSync(process.env.PLAYROOM_TEST_ARTIFACT)}));}
-  await page.goto(server.url);await page.locator('#profile-form').waitFor();await page.locator('[name=playerName]').fill('Новичок');await active(page).locator('[data-account-open]').click();await active(page).locator('.account-modal').waitFor();await active(page).locator('.modal-head [data-command=close-modal]').click();
+  await page.goto(server.url);await page.locator('#profile-form').waitFor();
+  await page.setViewportSize({width:1280,height:900});
+  const welcome=await active(page).locator('.modal').boundingBox();
+  assert(welcome.width<=576&&Math.abs(welcome.x+welcome.width/2-640)<1,JSON.stringify(welcome));
+  if(process.env.PLAYROOM_CAPTURE_DIR){fs.mkdirSync(process.env.PLAYROOM_CAPTURE_DIR,{recursive:true});await page.screenshot({path:path.join(process.env.PLAYROOM_CAPTURE_DIR,'welcome-desktop.png')});}
+  await page.locator('[name=playerName]').fill('Новичок');await active(page).locator('[data-account-open]').click();await active(page).locator('.account-modal').waitFor();
+  const account=await active(page).locator('.account-modal').boundingBox();
+  assert(account.width<=768&&Math.abs(account.x+account.width/2-640)<1,JSON.stringify(account));
+  await active(page).locator('.modal-head [data-command=close-modal]').click();
+  await page.setViewportSize({width:320,height:740});
   assert.equal(await page.locator('[name=playerName]').inputValue(),'Новичок');assert.match(await page.locator('#profile-form [type=submit],button[form=profile-form]').innerText(),/без облака/);await page.locator('#profile-form [type=submit],button[form=profile-form]').click();await TestUI.ready(page);
   await page.evaluate(()=>PlayroomLobbyNetwork.incoming());await active(page).locator('[data-incoming-content] [data-online-entry-account]').waitFor();assert.equal(await active(page).locator('[data-lobby-join-code] input[name=token]').count(),1,'native guest room lookup remains available');assert.equal(await active(page).locator('[data-online-entry-account]').count(),1);await active(page).locator('.modal-head [data-command=close-modal]').click();
   await page.locator('[data-hub-page=profile]').click();await page.locator('#hub-profile-page [data-profile-account]').click();await active(page).locator('[data-command=profile-edit]').click();const nickname=active(page).locator('#local-profile-editor input[name=nickname]');await nickname.fill('Новое имя');await nickname.blur();assert.equal(await page.evaluate(()=>PlayroomAppBridge.profile().name),'Новичок','profile draft is not saved on blur');await active(page).locator('[data-local-profile-avatar]').click();await active(page).locator('.avatar-picker-modal').waitFor();await active(page).locator('.modal-head [data-command=close-modal]').click();assert.equal(await nickname.inputValue(),'Новое имя','child Back retains the unsaved native input');await active(page).locator('button[form=local-profile-editor][type=submit]').click();assert.equal(await page.evaluate(()=>PlayroomAppBridge.profile().name),'Новое имя');await active(page).locator('.modal-head [data-command=close-modal]').click();

@@ -2,7 +2,7 @@
 const {test}=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path'),os=require('node:os');
 const {chromium,executablePath}=require('../scripts/codex/browser.cjs');
 const source=fs.readFileSync(path.join(__dirname,'../app/acoustic-pairing.js'),'utf8');
-const rtcSource=['core/messages.js','core/protocol.js','application/recovery-coordinator.js','application/replay-codec.js','presentation/event-stream.js','presentation/projection-sync.js','presentation/network-projection.js','platform/web/realtime-peer.js','application/wire-codec.js','app/transports/reliable-channel.js','application/command-wire.js','app/transports/webrtc.js'].map(file=>fs.readFileSync(path.join(__dirname,'..',file),'utf8')).join('\n');
+const rtcSource=['core/messages.js','core/protocol.js','application/recovery-coordinator.js','application/replay-codec.js','presentation/event-stream.js','presentation/projection-sync.js','presentation/transition.js','presentation/network-projection.js','platform/web/realtime-peer.js','application/wire-codec.js','app/transports/reliable-channel.js','application/command-wire.js','app/transports/webrtc.js'].map(file=>fs.readFileSync(path.join(__dirname,'..',file),'utf8')).join('\n');
 const pairingSource=fs.readFileSync(path.join(__dirname,'../app/pairing.js'),'utf8');
 function localIPv4(){
   return Object.values(os.networkInterfaces()).flat().find(x=>x.family==='IPv4'&&!x.internal)?.address||null;
@@ -21,7 +21,10 @@ test('compact acoustic SDP opens an actual Chromium RTCDataChannel', {timeout:45
     const answerToken=await b.evaluate(([signal,address])=>PlayroomPairing.fromSignal('answer',signal,{address}),[answer,address]);
     assert.ok(answerToken.startsWith('PR3.'));
     await Promise.all([
-      a.evaluate(token=>peer.acceptAnswer(PlayroomPairing.decode(token).signal),answerToken),
+      a.evaluate(token=>{
+        const {signal}=PlayroomPairing.decode(token);
+        return Promise.all([peer.acceptAnswer(signal),peer.acceptAnswer(signal)]);
+      },answerToken),
       b.evaluate(async()=>{const channel=await peer.waitOpen({timeout:12000});window.channel=channel;})
     ]);
     await Promise.all([
@@ -33,6 +36,10 @@ test('compact acoustic SDP opens an actual Chromium RTCDataChannel', {timeout:45
       b.evaluate(()=>channel.readyState)
     ]);
     assert.deepEqual(states,['open','open']);
+    assert(await a.evaluate(token=>{
+      const {signal}=PlayroomPairing.decode(token);
+      return peer.matchesAcceptedAnswer(PlayroomWebRTCTransport.parseSignal(signal,'answer'));
+    },answerToken),'the received compact answer is recognized after negotiation');
     await b.evaluate(()=>{window.gotMessage=new Promise(resolve=>channel.addEventListener('message',event=>resolve(event.data),{once:true}));});
     await a.evaluate(()=>peer.channel.send('acoustic-pairing-ok'));
     assert.equal(await b.evaluate(()=>gotMessage),'acoustic-pairing-ok');

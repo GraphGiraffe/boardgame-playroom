@@ -11,6 +11,18 @@
     '--die-face':'material.die.face','--die-rim':'material.die.rim','--die-side':'material.die.side','--die-mark':'material.die.ink'
   };
 
+  // Native viewers and the application apply the same semantic/legacy aliases.
+  function applyPalette(document,theme){
+    const element=document.documentElement;
+    for (const [name,value] of Object.entries(theme.palette)) element.style.setProperty('--color-'+name.replaceAll('.','-'),value);
+    for (const [name,slot] of Object.entries(aliases)) element.style.setProperty(name,theme.palette[slot]);
+    element.style.colorScheme=theme.mode;
+    element.style.backgroundColor=theme.palette['surface.canvas'];
+    document.querySelector('meta[name="color-scheme"]')?.setAttribute('content',theme.mode);
+    element.dataset.appearanceMode=theme.mode;
+    element.dataset.appearancePreset=theme.id;
+  }
+
   function create({document, resources, storage, idFactory}) {
     const catalog = new root.PlayroomAppearance.ThemeCatalog({presets:resources.presets, assets:resources.assets});
     const translator = new root.PlayroomLocalization.Translator({catalogs:resources.catalogs});
@@ -45,13 +57,7 @@
       theme={...theme,palette:accentPalette(theme)};
       root.PlayroomAssetResolver=new root.PlayroomGameComponents.AssetResolver({catalog:resources.assets,skins:theme.skins,skinFor:(family,packId)=>skins.resolve(family,{packId,defaults:root.PlayroomCatalog?.[packId]?.defaultSkins||{},theme:theme.skins,draft:skinDraft}),palette:theme.palette,renderers:{'round-token':root.PlayroomComponents.roundTokenArt,counter:params=>params.style==='score'?root.PlayroomGameComponents.scoreBadge(params,{roundTokenArt:value=>root.PlayroomAssetResolver.render('round-token',value)}):root.PlayroomGameComponents.countBadge(params.value,params.label,params)}});
       const element = document.documentElement;
-      for (const [name,value] of Object.entries(theme.palette)) element.style.setProperty('--color-'+name.replaceAll('.','-'),value);
-      for (const [name,slot] of Object.entries(aliases)) element.style.setProperty(name,theme.palette[slot]);
-      element.style.colorScheme=theme.mode;
-      element.style.backgroundColor=theme.palette['surface.canvas'];
-      document.querySelector('meta[name="color-scheme"]')?.setAttribute('content',theme.mode);
-      element.dataset.appearanceMode=theme.mode;
-      element.dataset.appearancePreset=theme.id;
+      applyPalette(document,theme);
       element.dataset.appearanceAccentColor=service.snapshot().accentColor||'default';
       element.dataset.avatarStyle=service.avatarStyle();
       for(const image of document.querySelectorAll('img[data-avatar-id]')){const src=root.PlayroomAvatars.source(image.dataset.avatarId,image.dataset.avatarStyle||service.avatarStyle());if(src)image.src=src;}
@@ -62,6 +68,9 @@
       const recordGeometry=(family,params={})=>{const value=root.PlayroomAssetResolver.resolve(family,params);geometry.set(JSON.stringify([family,params.packId||null]),[value.variant,value.stacking,value.ratio]);};
       for(const node of document.querySelectorAll('[data-asset-family][data-asset-params]')){
         const template=document.createElement('template'),params=JSON.parse(node.dataset.assetParams),port=node.parentElement?.hasAttribute('data-asset-placement')?node.parentElement:null;
+        // A mounted SDK card resolves its new skin through the owning scene's
+        // resource index. The live resource callback is never serialized.
+        if(node._assetBackSource)params.backUrlForSet=node._assetBackSource;
         const drawing=root.PlayroomAssetResolver.render(node.dataset.assetFamily,params);
         template.innerHTML=port?'<svg>'+root.PlayroomGameComponents.vector.place(drawing,JSON.parse(port.dataset.assetPlacement))+'</svg>':drawing;
         const placed=port?template.content.firstElementChild.firstElementChild:null,fresh=placed?placed.firstElementChild:template.content.firstElementChild;
@@ -103,5 +112,5 @@
       cancelSkins(){skinDraft=null;apply(service.shown());},
       saveSkins(draft){skins.save(draft);skinDraft=null;apply(service.shown());},destroy:unsubscribe});
   }
-  root.PlayroomAppearanceWeb=Object.freeze({create,storageKey:KEY});
+  root.PlayroomAppearanceWeb=Object.freeze({create,applyPalette,storageKey:KEY});
 })(globalThis);

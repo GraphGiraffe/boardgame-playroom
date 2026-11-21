@@ -176,17 +176,53 @@ test('each migrated pack definition executes in isolation with explicit determin
 test('Durak Table allows public responses and masks all hands without private card choices',()=>{
  const {GameModel}=require('../core/model-runtime.js'),Random=require('../core/random.js');
  const base=path.join(packs,'packs/durak'),Deck=require(path.join(packs,'shared/domain/standard-deck.js'));
- const model=new GameModel(require(base+'/domain/game.js')({shuffle:Random.shuffle,ending:require(path.join(packs,'shared/domain/end-policy.js'))},{Deck,Cards:require(base+'/domain/cards.js')}));
+ const definition=require(base+'/domain/game.js')({shuffle:Random.shuffle,ending:require(path.join(packs,'shared/domain/end-policy.js'))},{Deck,Cards:require(base+'/domain/cards.js')});
+ const model=new GameModel(definition);
  let state=model.create({playerCount:2,firstPlayer:0,preset:'classic',rng:17,options:{variant:'throwin',deck:54}});
  const first=model.legalActions(state,0).find(action=>action.type==='attack');assert(first);
+ const draft=definition.reduce(state,0,first).position;
+ assert.equal(draft.data.drawPile,state.data.drawPile);
+ assert.equal(draft.data.hands[1],state.data.hands[1]);
+ assert.notEqual(draft.data.hands[0],state.data.hands[0]);
+ assert.equal(state.data.table.length,0);
+ const own=definition.project(state,0);
+ assert.equal(own.hands[0],state.data.hands[0]);
+ assert(own.hands[1].every(card=>card.hidden&&Object.keys(card).length===1));
+ assert(own.drawPile.every(card=>card.hidden&&Object.keys(card).length===1));
  assert(model.projectTable(state,0).actions.every(action=>!action.card));
+ const previous=state;
  state=model.apply(state,0,first).position;
+ assert.equal(state.data.drawPile,previous.data.drawPile,'the engine keeps the unchanged stock between revisions');
+ assert.equal(state.data.hands[1],previous.data.hands[1],'the engine keeps the untouched hand');
+ const player=model.project(state,0);
+ assert.equal(player.data.hands[0],state.data.hands[0],'a player projection retains only the authorized visible hand');
+ assert.notEqual(player.data.hands[1],state.data.hands[1]);
  const table=model.projectTable(state,state.turn);assert(table.data.hands.flat().every(card=>card.hidden));
  assert(table.actions.some(action=>action.type==='take'));assert(!table.actions.some(action=>action.card));
  assert.throws(()=>model.commandFor(state,state.turn,model.legalActions(state,state.turn).find(action=>action.card),'table'));
  const changed=model.apply(state,state.turn,{type:'take'});
  assert(changed.events.every(event=>event.type.startsWith('durak.')));
  assert(changed.events.every(event=>!Object.hasOwn(event,'text')));
+ const simple=model.create({playerCount:2,firstPlayer:0,preset:'classic',rng:17,options:{variant:'simple'}});
+ const open=model.legalActions(simple,0).find(action=>action.type==='attack');
+ const staged=model.apply(simple,0,open).position;
+ const undone=definition.reduce(staged,0,{type:'undo'}).position;
+ assert.equal(staged.data.table.length,1);
+ assert.equal(undone.data.hands[0].at(-1).id,open.card);
+ assert.equal(undone.data.hands[1],staged.data.hands[1]);
+
+ const alone=JSON.parse(JSON.stringify(model.create({playerCount:2,firstPlayer:0,preset:'classic',rng:17,options:{variant:'transfer',deck:36}})));
+ const cards=new Map(Deck.create(36).map(card=>[card.id,card]));
+ const take=id=>{const card=cards.get(id);cards.delete(id);return card;};
+ Object.assign(alone.data,{hands:[[],[take('♦6'),take('♥7')]],table:[{attack:take('♣6'),defense:null}],drawPile:[],discard:[...cards.values()],attackLimit:2});
+ alone.turn=1;
+ assert(model.validate(alone));
+ const choices=model.legalActions(alone,1);
+ assert(choices.some(action=>action.type==='take'));
+ assert(!choices.some(action=>action.type==='transfer'),'the remaining defender cannot transfer to their own seat');
+ const took=model.apply(alone,1,{type:'take'}).position;
+ const finished=model.apply(took,0,{type:'done'}).position;
+ assert.equal(finished.status,'finished');assert.deepEqual(finished.winners,[0]);
 });
 
 test('race endings honor the assigned first-player boundary, ties and complete finish order',()=>{
@@ -340,7 +376,7 @@ test('ZiL+ rewards raw doubles after all moves and has no extra-roll cells',()=>
 });
 
 test('Go Fish asks show rank symbols while retaining complete event descriptions',()=>{
- const P=require(path.join(packs,'packs/gofish/presentation/scene.js')),locale=require(path.join(packs,'packs/gofish/locales/ru/game.json'));
+ const P=require(path.join(packs,'packs/gofish/presentation/scene.js')),locale=require(path.join(packs,'packs/gofish/lang/ru.json'));
  const {Translator}=require('../presentation/localization.js'),t=new Translator({catalogs:{ru:locale}});
  for(const [rank,label] of [[7,'7'],[11,'В'],[12,'Д'],[13,'К'],[14,'Т'],[15,'Дж']]){
   const event=P.event({type:'gofish.asked',actor:0,params:{rank,target:1}});assert.equal(t.text(event.speech.text.key,event.speech.text.params),label);assert.equal(event.message.key,'gofish.events.asked');

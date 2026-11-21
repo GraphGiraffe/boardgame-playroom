@@ -29,10 +29,7 @@ name=row['file'].split('/')[1]
 index=next((i for i,item in local if item['file'].split('/')[1]>name),local[-1][0]+1 if local else 0)
 rows.insert(index,row)
 p['resourceClosure']['budget'].update(assetBytes=sum(item['bytes'] for item in rows),assetCount=len(rows))
-p['sourceHash']=c['isolated_source_hash'](p)
-manifest=p['manifest'];files={**c['ISOLATED_MARKERS'],'sdk/source.json':c['json_text'](p)}
-if manifest.get('sounds'):files['sounds.js']=c['ISOLATED_SOUNDS_MARKER']
-wire=c['json_text']({'format':'playroom-pack','formatVersion':1,'manifest':manifest,'files':files})
+wire=c['json_text'](c['isolated_distribution'](p))
 size=len(wire.encode('utf-8'));maximum=c['MAX_PACK_BYTES'];target=c['TARGET_PACK_BYTES']
 print(json.dumps({'format':'playroom-pack','bytes':size,'maxBytes':maximum,'targetBytes':target,'unit':'UTF-8 bytes before transport compression','warnings':[{'code':'SDK_PACK_TARGET_EXCEEDED','bytes':size,'targetBytes':target}] if size>target else []}))`;
  const result=require('node:child_process').spawnSync('python3',['-c',script,path.resolve(__dirname,'../tooling/pack_compiler.py')],{input:JSON.stringify({root:project.root,shared:shared?fs.realpathSync(shared):null,resource}),encoding:'utf8',timeout:20000,maxBuffer:1024*1024});
@@ -45,6 +42,14 @@ function auditProjectAssetImport(root,candidate,{shared}={}){
  const project=require('./project.cjs').loadProject(root,{shared}),inventory=project.resourceAudit;
  if(project.resourceAssets.some(asset=>asset.file===candidate.file))fail('SDK_ASSET_EXISTS');
  const report=validateAsset(candidate.buffer,candidate.file),count=inventory.files.length+1,bytes=inventory.bytes+report.bytes,decodedImageBytes=inventory.decodedImageBytes+(report.decodedImageBytes||0);
+ const duration=candidate.provenance?.conversion?.durationSeconds;
+ // The converter probes the derivative before this shared, pre-write audit.
+ if(duration!==undefined){
+  if(!report.mime.startsWith('audio/')||!Number.isFinite(duration)||duration<=0)fail('SDK_AUDIO_DURATION_INVALID',{file:candidate.file});
+  if(duration>BUDGET.audioSeconds)fail('SDK_AUDIO_DURATION_LIMIT',{file:candidate.file,seconds:duration,maxSeconds:BUDGET.audioSeconds});
+  report.durationSeconds=duration;
+  report.warnings=report.warnings.filter(warning=>warning.code!=='SDK_AUDIO_DURATION_UNVERIFIED');
+ }
  if(count>BUDGET.files)fail('SDK_ASSET_COUNT',{maxFiles:BUDGET.files});
  if(bytes>BUDGET.assetBytes)fail('SDK_ASSET_TOTAL_LIMIT',{bytes,maxBytes:BUDGET.assetBytes});
  if(decodedImageBytes>BUDGET.decodedImageBytes)fail('SDK_DECODED_IMAGE_LIMIT',{decodedImageBytes,maxBytes:BUDGET.decodedImageBytes});
@@ -52,7 +57,7 @@ function auditProjectAssetImport(root,candidate,{shared}={}){
  const resource={file:candidate.file,sha256:report.sha256,mime:report.mime,bytes:report.bytes,data:candidate.buffer.toString('base64'),provenance:{...candidate.provenance,sha256:report.sha256}};
  const prepared={...project,resourceAssets:[...project.resourceAssets,resource],resourceAudit:assets,resourceClosure:{...project.resourceClosure,budget:{...project.resourceClosure.budget,assetBytes:bytes,assetCount:count}}};
  const sourceBudget=require('./artifact.cjs').encodeSource(prepared,assets).budget,installableBudget=installableImportBudget(project,resource,shared);
- if(installableBudget.bytes>installableBudget.maxBytes)fail('SDK_PACK_SIZE_LIMIT',{bytes:installableBudget.bytes,maxBytes:installableBudget.maxBytes,sourceBytes:sourceBudget.bytes,format:installableBudget.format,hint:'The installable pack includes a second JSON encoding of sdk/source.json; reduce its runtime payload.'});
+ if(installableBudget.bytes>installableBudget.maxBytes)fail('SDK_PACK_SIZE_LIMIT',{bytes:installableBudget.bytes,maxBytes:installableBudget.maxBytes,sourceBytes:sourceBudget.bytes,format:installableBudget.format,hint:'The complete installable wrapper and SDK resources exceed the pack limit; reduce the runtime payload.'});
  return {...report,assetBudget:{bytes,count,...inventory.limits},sourceBudget,installableBudget};
 }
 module.exports={MIME,validateAsset,validateMedia,auditAssets,auditProjectAssetImport};

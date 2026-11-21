@@ -16,7 +16,11 @@
  function sample(family,variant,packId,palette=service.active().palette){
   const resolver=new root.PlayroomGameComponents.AssetResolver({catalog:runtime.assets,palette,skinFor:()=>variant,renderers:root.PlayroomAssetResolver.renderers});
   let backUrl='';if(family==='card-back')try{backUrl=root.PlayroomPacks.exportView(packId).assets['assets/shared/card-back.svg']||'';}catch{}
-  const art=resolver.render(family,{character:'circle-red',characterSources:{minimal:root.PlayroomAvatars.source('circle-red')},rank:'К',suit:'♣',value:1,a:6,b:3,size:3,king:false,movable:false,backUrl}),template=document.createElement('template');template.innerHTML=art;
+  // Isolated packs expose the same public media map as native packs; samples
+  // must use each actual variant rather than the host's default avatar art.
+  let characterAssets={};if(family==='character-face')try{characterAssets=root.PlayroomPacks.exportView(packId).assets;}catch{}
+  const characterSources=Object.fromEntries(['minimal','simple'].map(style=>[style,characterAssets['assets/shared-packs/characters-'+style+'/runtime/circle-red.svg']||(style==='minimal'?root.PlayroomAvatars.source('circle-red'):'')]));
+  const art=resolver.render(family,{character:'circle-red',characterSources,rank:'К',suit:'♣',value:1,a:6,b:3,size:3,king:false,movable:false,backUrl}),template=document.createElement('template');template.innerHTML=art;
   const box=template.content.querySelector('svg')?.getAttribute('viewBox')?.trim().split(/\s+/).map(Number),ratio=box?.length===4&&box[2]>0&&box[3]>0?box.slice(2).join('/'):runtime.assets[family].ratio.join('/');return {art,ratio};
  }
  function skinSettings(packId,draft=null){

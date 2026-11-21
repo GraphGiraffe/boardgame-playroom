@@ -16,7 +16,7 @@ test('canonical SVG art scales borders and glyphs uniformly with authored aspect
 test('authority default clock binds browser timers and cancels bot callbacks',async()=>{
  const browser=await chromium.launch({headless:true,executablePath:executablePath(),args:['--no-sandbox']});try{
   const page=await browser.newPage();await page.setContent('<main>Clock regression</main>');
-  for(const file of ['core/messages.js','core/random.js','presentation/network-projection.js','core/engine.js','core/model-values.js','core/events.js','core/bot-difficulty.js','core/model-runtime.js','presentation/localization.js','presentation/scene-contract.js','core/model-registration.js','core/history.js','core/session-codec.js','core/session.js','core/protocol.js','core/player-controls.js','core/command-processor.js','core/authority.js'])await page.addScriptTag({content:fs.readFileSync(path.join(root,file),'utf8')});
+  for(const file of ['core/messages.js','core/random.js','presentation/transition.js','presentation/network-projection.js','core/engine.js','core/model-values.js','core/events.js','core/bot-difficulty.js','core/model-runtime.js','presentation/localization.js','presentation/scene-contract.js','core/model-registration.js','core/history.js','core/session-codec.js','core/session.js','core/protocol.js','core/player-controls.js','core/command-processor.js','core/authority.js'])await page.addScriptTag({content:fs.readFileSync(path.join(root,file),'utf8')});
   await page.evaluate(()=>{globalThis.PlayroomPack={adaptModel:spec=>PlayroomModelRegistration.adapt(TabletopCore,spec)};});
   await page.addScriptTag({content:require('./pack-fixture.cjs').rules({id:'clock-fixture'})});
   const result=await page.evaluate(async()=>{

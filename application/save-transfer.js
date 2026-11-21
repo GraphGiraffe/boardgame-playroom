@@ -4,8 +4,11 @@
  const fail=code=>{throw Object.assign(Error(code),{code});},id=x=>typeof x==='string'&&/^[a-z][a-z0-9_-]{0,63}$/.test(x),version=x=>typeof x==='string'&&x.length<=100&&/^\d+\.\d+\.\d+(?:[-+][\w.+-]+)?$/.test(x);
  async function digest(value){const data=new TextEncoder().encode(typeof value==='string'?value:canonical(value));if(data.length>MAX_BYTES)fail('SAVE_TOO_LARGE');return 'sha256:'+Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',data)),x=>x.toString(16).padStart(2,'0')).join('');}
  function options(value,manifest){
-  const keys=new Set(['seed','mode','packVersion','preset','presetLabel','openHands','firstPlayer','firstPlayerMode','portableRoomName',...(manifest.settings||[]).map(s=>s.key)]),out={};
+  const fields=Array.isArray(manifest.settings)?manifest.settings:manifest.settings?.fields;
+  const keys=new Set(['seed','mode','packVersion','preset','presetLabel','openHands','firstPlayer','firstPlayerMode','portableRoomName',...(fields||[]).map(field=>field.key)]),out={};
   for(const key of keys)if(Object.hasOwn(value,key))out[key]=clone(value[key]);
+  // Keep the deterministic setup input without carrying room identity into the copy.
+  if(Number.isInteger(value.hostPlayer)&&value.hostPlayer>=-1&&value.hostPlayer<(value.players?.length??0))out.hostPlayer=value.hostPlayer;
   if(value.players)out.players=value.players.map(p=>({name:p.name,bot:!!p.bot,...(p.avatar?{avatar:p.avatar}:{}),...(p.botSettings?{botSettings:Object.fromEntries(['difficulty','strategy','resolvedStrategy'].filter(key=>p.botSettings[key]!==undefined).map(key=>[key,p.botSettings[key]]))}:{})}));
   return out;
  }
@@ -18,7 +21,8 @@
    const initial=new Session(session.engine,session.game,portable,{now:()=>session.createdAt}).current;
    const withoutEvents=state=>{const {events,mode,...position}=state;return position;};
    if(canonical(withoutEvents(initial))===canonical(withoutEvents(first))){
-    const current=saved.encoding==='actions-v2'?Session.storageState(session.engine,session.current):session.current;
+    const checkpoint=saved.encoding==='actions-v2'||saved.encoding==='actions-v3'&&saved.base==='actions-v2';
+    const current=checkpoint?Session.storageState(session.engine,session.current):session.current;
     return {...saved,options:portable,end:{...saved.end,fingerprint:Codec.fingerprint({...current,mode:initial.mode})}};
    }
   }
@@ -70,7 +74,7 @@
   let installed;try{installed=JSON.parse(packs.exportPack(d.id,d.version));}catch{}
   if(installed&&d.sha256&&await digest(installed)!==d.sha256)fail('SAVE_PACK_CONFLICT');
   if(!installed&&!value.pack)fail('SAVE_PACK_MISSING');
-  const bundle=installed||packs.parse(value.pack),token=packs.prepare(bundle);
+  const bundle=installed||packs.parse(value.pack),token=await (packs.prepareInstall?.(bundle)??packs.prepare(bundle));
   const session=value.kind==='session'?packs.validatePrepared(token,()=>sessionCopy(Session.restore(engine,value.payload),bundle.manifest,Session)):null;
   return {value,token,session,needsPack:!installed};
  }

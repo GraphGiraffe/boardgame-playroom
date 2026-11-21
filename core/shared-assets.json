@@ -12,15 +12,15 @@
       "source": "shared/components/game-components.js",
       "target": "core/game-components.js",
       "format": "text",
-      "sha256": "bc095a79c2cae43178808f3e0a7866ed7a0c2edcf3ce66ae6bdf9fe8ac8a7c80",
-      "renderedSha256": "bc095a79c2cae43178808f3e0a7866ed7a0c2edcf3ce66ae6bdf9fe8ac8a7c80"
+      "sha256": "cbc249d12092dd2844f03af57f948d3b15b3eab984292e9de1909ce89c2f0f1e",
+      "renderedSha256": "cbc249d12092dd2844f03af57f948d3b15b3eab984292e9de1909ce89c2f0f1e"
     },
     {
       "source": "shared/components/game-components.css",
       "target": "core/game-components.css",
       "format": "text",
-      "sha256": "1dc802a8cf7b867de0df2d59f462e544d4165fd6bd1bc0c3c9697d0e005a51ac",
-      "renderedSha256": "1dc802a8cf7b867de0df2d59f462e544d4165fd6bd1bc0c3c9697d0e005a51ac"
+      "sha256": "5a647bf9062afd6db28f56f049558ac4428a8fa248e7c07a11b623d3e7a8c53c",
+      "renderedSha256": "5a647bf9062afd6db28f56f049558ac4428a8fa248e7c07a11b623d3e7a8c53c"
     },
     {
       "source": "shared/sounds/standard-sounds.json",
@@ -41,8 +41,8 @@
       "source": "shared/locales/ru/components.json",
       "target": "locales/ru/ui-game-components.json",
       "format": "text",
-      "sha256": "c6e22a5dce36e340b944a79fd7efaf5dfb6f24c078e41ca9b4c3cc2ad7eb7cab",
-      "renderedSha256": "c6e22a5dce36e340b944a79fd7efaf5dfb6f24c078e41ca9b4c3cc2ad7eb7cab"
+      "sha256": "da2592ec12f4ab4230fd27b91f3526d1eb55720ac85040abe9c163734f9378e3",
+      "renderedSha256": "da2592ec12f4ab4230fd27b91f3526d1eb55720ac85040abe9c163734f9378e3"
     },
     {
       "source": "shared/domain/token-layout.js",
@@ -68,6 +68,62 @@
       "includeSets": [
         "minimal"
       ]
+    },
+    {
+      "source": "shared/asset-packs/uno-deck/renderer.js",
+      "target": "core/color-value-deck.js",
+      "format": "text",
+      "sha256": "d2a52600a072dd5f84a67f516babfb3148badfddbde33b9ac32097ad3d79acec",
+      "renderedSha256": "d2a52600a072dd5f84a67f516babfb3148badfddbde33b9ac32097ad3d79acec"
+    },
+    {
+      "source": "shared/asset-packs/mini-cards/renderer.js",
+      "target": "core/rank-cards.js",
+      "format": "text",
+      "sha256": "e2f844322e03a7b762d89a62e5c29d63148cca52e9b19048cd3910d78f95d239",
+      "renderedSha256": "e2f844322e03a7b762d89a62e5c29d63148cca52e9b19048cd3910d78f95d239"
+    },
+    {
+      "source": "shared/asset-packs/mini-cards/styles.css",
+      "target": "core/rank-cards.css",
+      "format": "text",
+      "sha256": "06ebccea8136eb9f0ccae58d58f39bb22d65131192340a33781ae7aa2494a9a5",
+      "renderedSha256": "06ebccea8136eb9f0ccae58d58f39bb22d65131192340a33781ae7aa2494a9a5"
+    },
+    {
+      "source": "shared/asset-packs/solitaire-board/renderer.js",
+      "target": "core/solitaire-board.js",
+      "format": "text",
+      "sha256": "9aa6c39e067331b362e04fd17c214ec043cbcf44c3b82dc88c56ad4bf808c900",
+      "renderedSha256": "9aa6c39e067331b362e04fd17c214ec043cbcf44c3b82dc88c56ad4bf808c900"
+    },
+    {
+      "source": "shared/asset-packs/solitaire-board/styles.css",
+      "target": "core/solitaire-board.css",
+      "format": "text",
+      "sha256": "7c181b9a1d6a0087f1f9ca3a4ec8d56ae9fb89a198db3b96c7a4413c3554dd82",
+      "renderedSha256": "7c181b9a1d6a0087f1f9ca3a4ec8d56ae9fb89a198db3b96c7a4413c3554dd82"
+    },
+    {
+      "source": "shared/asset-packs/elemental-arena/renderer.js",
+      "target": "core/elemental-arena.js",
+      "format": "text",
+      "sha256": "c3fbec5c27d7a1944bb7ccf22ba1a4978622f5f9e6b3ecf6b0e3971fe0af1521",
+      "renderedSha256": "c3fbec5c27d7a1944bb7ccf22ba1a4978622f5f9e6b3ecf6b0e3971fe0af1521"
+    },
+    {
+      "source": "shared/asset-packs/elemental-arena/styles.css",
+      "target": "core/elemental-arena.css",
+      "format": "text",
+      "sha256": "054ae1f3cb3269152bbc2ac37c372c108d40db7e46f0ce74f5715edcd39e0fc7",
+      "renderedSha256": "054ae1f3cb3269152bbc2ac37c372c108d40db7e46f0ce74f5715edcd39e0fc7"
+    },
+    {
+      "source": "shared/view-kit.css",
+      "target": "core/view-kit.css",
+      "format": "text",
+      "sha256": "087078f303d72b0aa26c226069ff8460d2ced2be29f5d91029798bfb4db45d74",
+      "renderedSha256": "087078f303d72b0aa26c226069ff8460d2ced2be29f5d91029798bfb4db45d74"
     }
   ]
 }

@@ -2,6 +2,30 @@
 
 Область применения: приложение **0.21.0** и коллекция **0.9.0**, engineApi 4 / viewApi 3 / protocol 3. Исторические этапы ниже поясняют совместимость; актуальное приложение доступно на [сайте](https://graphgiraffe.github.io/playroom-hod-test/).
 
+## Image resources
+
+Pack installation validates the full media bundle. The Web renderer indexes
+the installed image records by path and shares that index for the same
+immutable resource array. Both local and remote guest lobbies read media
+from the matching installed version and prepare images in idle time. The
+scene takes that cache for the same installed resources and
+creates any missing URLs on demand. Skin changes, updates and history reuse a
+URL while the image path and content stay the same. A scene releases its URLs
+on disposal and revokes entries whose path or content changes. The lobby
+releases its cache if it closes before the scene takes it. Studio can replace
+mutable resource records and refresh the index during an authoring session.
+
+The live network screen and network archive mount the exact locally installed
+pack. They share the installed public rules text, rulebook and sounds with
+the view. The separate presentation export builds portable asset URLs when
+a consumer explicitly requests it.
+
+The model registration adapter exposes a compatibility `data` view. Local
+screens and local replay share the read-only data from their authorized model.
+Authority retains the model and omits the compatibility field from its
+intermediate projection. Direct engine callers still receive detached data
+by default.
+
 ## Field viewport for enlarged displays (preview.28)
 
 Web GameScreen records the available field grid cell before fitting an intrinsic
@@ -107,11 +131,15 @@ timing never delays or substitutes the durable checkpoint.
    input marker and stage `aria-busy`; entering/leaving pending does not rebuild
    the field. All command handlers still check current rights, pending, history,
    pause and presentation state. Independent reactions use their own live rights.
-3. Accept the authorized snapshot. `Protocol.immutable` detaches external JSON once
-   and deeply freezes it; its private ownership registry permits in-process reuse
-   of that value and its descendants. An externally frozen object is not trusted.
-   WebRTC/MessagePort detach once at receipt; local authority snapshots are already
-   owned. This is an allocation contract, not an authorization or schema check.
+3. Accept the authorized snapshot. The installed SDK parses and seals the
+   QuickJS projection in the host's model ownership registry. Protocol assembly
+   can retain its branches in the same process. Ordinary objects still pass
+   through the detached copy path, including objects frozen by a caller.
+   WebRTC and MessagePort cross their normal serialization boundaries. The
+   authority selects the audience before sharing any part of a projection.
+   After receipt, the SDK seals the returned local data and commands at the
+   QuickJS boundary. The client assembles one immutable projection for event
+   checkpoints, the final scene, tutorial and typed input.
 4. Queue each immutable snapshot object once in GameScreenController. A repeated
    ACK notification can release pending input without repainting. Different
    snapshots at the same game revision still carry pause/control/reaction changes
@@ -124,6 +152,8 @@ timing never delays or substitutes the durable checkpoint.
    Passive shell patches cannot remove active effects. Bind and unchanged
    `setRate` are idempotent; advance only after all finite effects/audio finish.
 6. On settlement, release input and send presentation/learning notifications.
+   The local screen finishes when the effect promise settles. A positive
+   screen-level settlement interval uses its own timer.
    If the displayed and live snapshots are still the rendered objects, update
    metadata only. A changed selection or a new snapshot requires rendering.
    Destruction/cancellation guards prevent late promises from changing a new mount.
@@ -193,8 +223,20 @@ interrupting the whole presentation context.
   and resolves feedback waiters. Each accepted transition retains its own initial
   and final scene even while another transition is playing. The DOM adapter holds
   semantic participant counters at the current scene during redraw, then restores
-  the committed counters. Skip discards pending cues and renderer waiters without
+  the committed counters. Phases on the same scene share one overlay. The shell
+  releases it before patching, so the next refresh can borrow the new counters.
+  Skip discards pending cues and renderer waiters without
   resetting the committed-event cursor.
+- The app and Studio use `TabletopAudio.present` for cues in a game phase.
+  A sample gets up to 120 ms to start decoding and be ready for playback.
+  After that window the cue expires. If decoding later succeeds, the buffer
+  stays in the audio cache for the next cue. A cue that starts participates
+  in the phase until it ends or the phase is cancelled.
+- The presentation clock tracks each active audio group. Pause records its
+  position in media seconds and stops its Web Audio nodes. Resume schedules
+  the remaining sample or note envelopes at the current rate. Rate changes
+  account for elapsed time at the previous rate before rescheduling.
+  Cancelling a phase releases its own audio groups and their timers.
 
 Mage produces semantic phase plans; all packs produce EntityRefs and scene
 geometry. DecisionWindow is integrated with durable authority. Field rendering
@@ -235,6 +277,17 @@ pass the same port to GameFlow and GameFeedback. The default document port is
 available for standalone consumers. `GameFlow.present` owns cancellation only;
 reading/reveal duration belongs entirely to the plan, without an outer delay.
 
+One synchronous source capture shares computed styles and local rotations
+between siblings. The snapshot holds poses and the required visual copies.
+Destination measurement and a later cue read the newly mounted layout.
+For a checkpoint, GameFeedback requests only the transfer's stock or source
+hand art and the authorized board objects that leave that checkpoint.
+
+Player counters belong to the game shell. During playback, GameFeedback
+temporarily replaces the counters that differ from the current displayed
+checkpoint. It restores the original DOM children before the shell patches
+the next frame, so clearing playback releases the committed counters.
+
 
 ## Network scene boundary
 Authority snapshots contain authorized SceneModel, events and decorated legal
@@ -242,6 +295,11 @@ choices, but no domain `data` or `modelProjection`. History scenes have no live
 interactions. The public Table receives only its granted public commands;
 spectator scenes contain no actionable commands. Client commands canonicalize
 against `scene.interactions[].command`, not against translated labels.
+
+Visibility is resolved on the raw journal before formatting. The game adapter
+shares immutable formatted rows for the same authorized fact and player names.
+A name change rebinds those labels, and historical positions supply their own
+names. The authority retains the shared rows when it composes a local frame.
 
 The model adapter adds the validated public `decisionWindow` descriptor to the
 scene. Client stale-revision retry requires the same window, unchanged own
@@ -253,6 +311,16 @@ The local candidate uses engineApi 4, viewApi 3 and protocol 3 together.
 Old contracts are rejected before execution; archives remain exportable.
 
 ### Public objects leaving a board
+
+Zone and object descriptors stay in the authorized SceneModel. They address
+the visible components and their effects without mounting a second list of
+objects in the DOM. Deferred departures retain the mounted source from the
+same capture that measured its pose. Only objects leaving the public board
+need frozen outgoing artwork.
+
+A route resolves named anchors once per layout pass and shares each measured
+rectangle between validation and keyframe construction. A resize starts a new
+pass, including when the renderer has replaced the anchor elements.
 
 The event adapter retains a temporary visual for an object removed from an
 ordinary board transition. Selection comes from the difference between authorized
@@ -272,6 +340,12 @@ arrivals and independent target measurement.
 
 ## Authorized board geometry lifecycle
 
+The Web renderer compares layout signatures only when it can capture its own
+flight. Frozen published scenes can supply the previous layout at that point.
+For mutable input, the renderer records the signature at mount so a later
+in-place update cannot change the starting baseline. A routed dice roll can
+animate without comparing unchanged pawn positions.
+
 Motion capture receives the viewer-authorized initial SceneModel. Only objects
 in zones with `kind: 'board'` are board movers; arbitrary EntityRef namespaces
 are supported. CSS names and `checker-`/`token-` prefixes are not classification.
@@ -287,8 +361,33 @@ marks the boundary so redraw cannot rewind it. Cancellation restores staging and
 cancels the active surface flight, including ordinary non-route movement.
 Resize/scroll discards stale screen-coordinate reserves.
 
+Source capture shares a geometry pass across clipping, hand origins, and
+visible pieces. A node's screen rectangle and its cumulative ancestor angle
+are reused for that pass. Destination geometry uses a fresh pass after the
+layout update, including when the same DOM nodes move to new positions.
+
 These ports cover physical object geometry. Field scenes below additionally
 cover artwork and public object creation/removal. No private markup is kept for layout.
+
+Inventory placement uses the same motion surface and event phase. It compares
+the authorized positions of one `EntityRef` in the initial and final scenes
+for the same viewer. A change of slot in a compact tray only updates its
+layout. A change of zone or fixed slot can animate the one primary component.
+The initiating device can supply its drag-release rectangle for that entity
+and exact destination. Those coordinates stay in the screen adapter. History
+uses the source rectangle measured in its own earlier frame.
+
+For an anchored carrier, the measured outer box moves while an inner pivot
+owns the artwork and its slots. A stationary turn animates that pivot in
+place. A move combined with a turn uses the pivot of the single flight clone.
+The same phase owns both transforms, so pause, completion and cancellation
+release the carrier and its contents together.
+
+When cargo changes its carrier or slot, it keeps its entity ID and gets a
+separate flight. A moving carrier omits that cargo from its flight clone. The
+receiving slot determines the cargo's final position and orientation. The
+initiating screen can use its drag release for the accepted transfer. A public
+Table and history measure their own authorized origin and destination.
 
 
 ### Semantic field rendering boundary
@@ -303,6 +402,8 @@ check is not an authorization substitute.
 `registry.render(..., {fieldScene})` substitutes only this field. Current hand,
 controls, participant composition and layout policy stay with the committed
 recipe. The temporary field root is inert. No private HTML is cached.
+The native SDK recipe supplies its field port directly. Its DOM owner mounts
+the selected checkpoint, so the registry can reuse the shell recipe.
 
 GameFeedback exposes a held board scene and a `fieldChanged` redraw port. Local
 and network surfaces use it before the first movement/reveal interval. At that
@@ -314,15 +415,24 @@ This removes premature final artwork/new objects during pre-movement feedback.
 The target transaction below preserves that field during ordinary flights;
 per-event checkpoints advance multi-step commands without running rules again.
 
+When the WebRTC client restores a frame, the checkpoints, action labels and final
+scene share the same authorized projection and one installed-pack render.
+The host adapter validates checkpoint order and geometry. Checkpoints and the
+final scene reuse one turn hint when they receive the same owned projection. A
+different audience or input scope can have its own hint. The presentation player
+mounts each checkpoint at its event boundary.
+
 ### Field target transaction
 
 For an ordinary board transition, feedback now
-keeps the initial field through the flight. The host supplies `renderField(scene)`;
-`Motion.withFieldTargets(html, start, {initialRefs, finalRefs})` temporarily installs that field in its
-existing layout box, starts synchronous target measurement, then restores the
-exact original nodes in `finally`, before yielding to the browser. It returns the
-flight promise, or `null` when the live-target adapter is required. This callback
-must start motion synchronously; it must not await before measuring.
+keeps the initial field through the flight. The host supplies `renderField(scene)`.
+`Motion.withFieldTargets(prepare, start)` checks the live field first. For an
+HTML-owned field it requests `{html, initialRefs, finalRefs}` from `prepare`,
+installs that markup in the existing layout box and starts synchronous target
+measurement. It restores the exact original nodes in `finally`, before yielding
+to the browser. A mounted SDK port returns `null` before preparing markup or
+entity lists. The caller then releases and measures the mounted checkpoint.
+The SDK port and detached-HTML path use the same phase and cancellation context.
 
 Moving and departing originals are hidden, and their inline visibility is restored on
 completion or failure. Animation pause/rate/cancel still belong to the existing
@@ -349,6 +459,34 @@ the latest authority scene: later committed transitions may still be queued.
 legacy staging. Entering a different boundary refreshes its field if needed;
 settlement/cancellation releases the override back to the live renderer.
 
+For card tables, `displayScene` and hand-motion preparation look ahead
+within the same committed transition. A later transition starts on its own
+table after the current cues finish. If it starts a new playback batch,
+the first cue compares its checkpoint with the table still mounted from
+the previous batch and mounts the new table before motion.
+Silent catch-up advances the event cursor without building visual checkpoints.
+
+`GameFeedback.refresh` prepares hand motion after the shell has mounted the
+selected scene. Local play, shared views and history use that same entry.
+The motion surface mounts the captured outgoing hand once and reuses it
+while the cue owns it. A shell patch can replace the live hand, so the
+surface measures current destinations and only reapplies the temporary
+visibility and position overrides. Starting another transfer, playing the
+flight or cancelling releases the old arrival marks and hand overlay.
+
+`GameFeedback.sceneFor(committedScene)` supplies the native SDK scene in local
+play, shared views and Studio. It returns the same checkpoint object while the
+audience and viewer match the committed scene. The shell still owns input
+gating and the latest authorized command projection. When two consecutive
+renderer updates share the same frozen scene, the renderer reuses its layout
+signature and still updates controls and presentation state.
+
+The SDK renderer checks who owns motion before it captures outgoing DOM.
+The generic flight takes a snapshot only for a forward layout change in the
+same session and viewer with no host-owned animation or arena phase plan.
+Each playback gets its own run identity. Replacing the session cancels the
+old run before painting the new board.
+
 A boundary handled by the field motion transaction owns its departures. The
 legacy retained-departure overlay does not recreate them on the completion redraw.
 This preserves intermediate committed scenes; it does not infer unseen rule
@@ -365,15 +503,49 @@ API 4 адаптер принимает `presentation.eventScenes(projection)` �
 Окончание группы освобождает поле; skip/cancel освобождает всю очередь. Скорость
 и пауза остаются портами общего scheduler. Domain не зависит от проигрывания.
 
+Studio ставит следующий живой кадр в очередь, пока общий проигрыватель
+занят предыдущим. Кадр хранит авторизованный переход. Захват геометрии
+начинается после завершения предыдущего перехода. Обновление уже
+поставленной в очередь ревизии сохраняет её описание движения.
+Смена просмотра или переход по истории освобождает очередь. При переходе
+на мгновенный показ Studio сразу отображает последний принятый кадр.
 
 ## Concurrent effects and explicit delays
 
+The web motion port captures pieces and applies action effects only on active
+shared deck pages. Inactive pages stay mounted for page transitions. A fire
+pulse targets the visible mark in the rendered cell, which remains present
+after the input control is hidden.
+
 The group port may return a promise for committing an authorized scene. Cues start
-only after that promise resolves. A group ends at the maximum of its minimum
-visible duration and all effect completion times, never their sum. Sound ports
-must return playback completion, not merely enqueue sound. `Audio.batch` starts
-unique sounds concurrently without stopping preceding effects; the plan signal
-cancels them. A subsequent group cannot overlap unfinished sound or animation.
+only after that promise resolves. The fourth argument, `join`, registers the
+completion of finite animations started while mounting the scene. The native
+SDK scene uses this argument so sound starts alongside its animation. A group
+ends when its minimum visible duration and all registered effects have completed. Sound ports
+must return playback completion. `Audio.batch` starts unique sounds
+concurrently without stopping preceding effects. The plan signal cancels them.
+A subsequent group cannot overlap unfinished sound or animation. Committed
+game cues play when the audio context is already running. A pending gesture
+unlock leaves the visual phase free to start, with no later retry of that cue.
+
+The card request layer holds each movement at its initial pose during
+preparation. Its translation and face flips share the same first live
+frame, so a busy layout cannot consume the visible start of the effect.
+That same frame boundary starts ordinary flights and ordered transfers.
+The plan can hold or cancel a prepared frame. On resume, motion and
+its scheduled contact or completion timers start together at the current rate.
+
+Immediate groups advance in order on one stack frame. A pause during mounting
+holds the group's cues until resume. Rate changes during mounting take effect
+when the group starts its clock after the mount.
+
+A cold sample in a presentation cue has 120 ms to decode. The audio
+adapter checks elapsed monotonic time before scheduling a voice, even if
+the decode finishes before a delayed timeout callback. The decoded buffer
+still serves later cues. Serial preview and interface sounds replace only
+the previous serial sequence. They leave voices owned by an active game
+phase in place. Cancelling a plan stops its voices, and global stop or
+mute releases all playback and pending gaps.
 
 `{id: 'reading-pause', kind: 'delay', duration: 300}` is a built-in cue. Put it
 alone in a group for a sequential pause, or alongside effects for a concurrent
@@ -385,6 +557,12 @@ Card transfer checkpoints come from authorized pack presentation. Successive sto
 arrivals use separate intermediate hand scenes and flights. Sets and pairs disappear
 only at their own checkpoint after arrival. The authority computes rules immediately;
 presentation never postpones or recalculates rules to match wall-clock playback.
+For deferred captures, only the miniature hands named by committed arrival
+cues are measured. The motion port reads those anonymous slots before the
+shell replaces the old field and keeps them for the lifetime of the capture.
+An arrival layer borrows the captured public top of a pile while that node is
+detached. The layer releases it on completion or cancellation. Ordered
+transfers use the same destination pose for the borrowed top and every arrival.
 
 ## Finish places and participant awards
 
@@ -422,6 +600,14 @@ Capture only objects needed by the effect; do not clone whole hands or layouts f
 
 Definition содержит `steps` (`id`, CSS `selector`, локализованный `text`) и полный список `required`. ID обозначает смысл действия, а не конкретную карту, кнопку или жест. Завершённые пункты не повторяются. Невыполненные сохраняются между ходами и фазами до подходящей возможности, в том числе в следующих партиях. Первая/вторая карта Пексесо и первый/второй план Стихий имеют разные ID.
 
+Изолированный SDK переводит селекторы локальных элементов в структурированные адреса `local-control`, а ссылки на игровые действия — в разрешённые команды. Web-адаптер отмечает фактическую цель в DOM. Локальный выбор принадлежит интерфейсу, а игровой шаг считается освоенным после успешного ответа клиента. Это относится и к кнопкам SDK во внешних портах игрового экрана, например к готовности в панели руки на арене.
+
+Общий компонент выбора игрока владеет панелью соперника и открываемым окном карт. SDK связывает шаг `player-choice` с кнопкой панели или вариантом в текущем окне после сверки доступных команд. После открытия окна Web переносит общий указатель внутрь нативного диалога. Отмена закрывает окно без команды и сохраняет карточный шаг незавершённым.
+
+При открытии компонент использует один набор допустимых вариантов. SDK подготавливает подписи и адреса вариантов один раз для текущей сцены и передаёт команды по ссылке. Перед отправкой компонент снова сверяется с источником доступных действий, поскольку разрешения могли измениться, пока окно было открыто. Закрытый компонент пропускает обработку кликов по столу.
+
+В живой сетевой партии `app/shared-views.js` передаёт рендереру и контроллеру обучения ссылку на одну проекцию данного зрителя, включая проекцию вне поля `state` в компактном кадре. Адаптер пака переиспользует разрешённый сценарий с уже связанными шагами при совпадении проекции, локального выбора и прогресса. История и наблюдатель используют сцену без целей живого обучения.
+
 `actions` перечисляет типы успешных команд, `match(action)` уточняет условие: выход с базы, ход дамкой, цвет UNO, изменение длины хода. `interaction:true` разрешает засчитывать локальный выбор до команды; применяется к выбору карты, оппонента или типа действия. Нельзя завершать игровое действие только по нажатию кнопки: отклонённая команда не засчитывается. `capture(owner, viewer)` сохраняет определение **до отправки**, `committed(..., token)` отмечает его после успеха. Поэтому задержанный сетевой ACK не превращает первую карту во вторую. Старые токены инвалидируются при перезапуске. `completion` позволяет учитывать эквивалентную команду даже без открытого промежуточного UI.
 
 Выбирается первый невыполненный доступный видимый элемент. Отсутствующий контроль или `available:false` не закрывают пункт и не блокируют другие пункты. Предварительные условия сценария проверяются отдельно от физической видимости DOM. `concurrent` разрешает одновременный ввод; `complete` временно скрывает подсказку (например, после готового плана), но не стирает список. `phase` больше не сбрасывает прогресс; устаревшие `once`, `advance`, `turn`, `moves`, `wait`, `restartPhase` не управляют завершением обучения.
@@ -432,9 +618,27 @@ Definition содержит `steps` (`id`, CSS `selector`, локализова�
 
 В начале первого доступного собственного хода приложение предлагает обучение; в лобби, на чужом ходу, во время анимаций и просмотра истории вопрос не показывается. При одновременных действиях учитывается доступность команд участника. Обучение (по умолчанию включено). В настройках компактная строка без заголовка, отделённая линией: «Показывать обучение» и «Заново». Подтверждённый сброс очищает освоенные действия только текущего пака текущего пользователя и включает обучение; отмена ничего не меняет. Блок прослушивания звуков удалён.
 
-После ввода выдерживается 500 мс бездействия; во время удержания указателя рука скрыта. Один MutationObserver и отложенный requestAnimationFrame обновляют координаты; один отменяемый таймер обслуживает задержку, постоянного опроса нет. Слой не перехватывает ввод и не меняет геометрию поля. `prefers-reduced-motion` убирает перемещение и повторяющийся тап.
+Обычная подсказка ждёт отпускания указателя и 500 мс бездействия. За это время обновления поля пропускают поиск целей и измерение их геометрии. Доступная подсказка с `immediate:true` сохраняет обычный порядок выбора. Один отменяемый таймер следит за сроком покоя при повторном вводе. MutationObserver и отложенный requestAnimationFrame обновляют видимую цель. Слой пропускает ввод и сохраняет геометрию поля. `prefers-reduced-motion` убирает перемещение и повторяющийся тап.
 
 ### История публичных последовательностей
+
+Локальный экран переиспользует неизменяемые проекции трёх последних
+запрошенных ревизий. Это позволяет держать общее представление исходного
+и целевого кадров перехода вместе с последней ревизией партии. Проекции
+разделены по зрителям, включая публичную. При смене сессии или точной
+регистрации пака экран сбрасывает кэш. Допустимые действия берутся из
+текущего кадра authority и обновляются по её событиям независимо от кэша
+представления.
+
+Автоповтор локальной и сетевой истории использует общий
+`HistoryController.Playback`. Контроллер удерживает оставшийся интервал
+до следующего шага и ждёт завершения текущего шага. На паузе авторский
+план, эффекты очереди и нативное движение останавливаются на той же
+позиции. Кнопка обновляет только своё состояние. Возобновление
+продолжает уже смонтированный кадр и ждёт те же обещания завершения.
+Полученный по сети кадр ждёт возобновления перед выбором в истории.
+Явный переход по ползунку или выход закрывают прежний запуск и его
+ожидания.
 
 Режим PublicSequence задаётся до рендера: `live` для партии, `still` для неподвижного просмотра истории, `play` для воспроизведения и `pause` для удержания текущей фазы. Повторный bind не перезапускает существующий план. Пауза сохраняет его позицию; продолжение возобновляет тот же план. Внешний проигрыватель истории ждёт `whenIdle(host)` перед следующим снимком и проверяет свой ticket после каждого ожидания. Выход отменяет историю и показывает конечный кадр актуальной партии без повторного проигрывания раунда.
 
@@ -474,6 +678,19 @@ focus, fitted geometry and runtime effects. Unchanged preparation-sensitive
 components clone their authored template rather than parse the same SVG again.
 The runtime-owned public display is excluded from automatic extraction.
 
+Native solitaire and elemental arena retain their parsed, detached field and
+port trees as the next patch baselines. `DOM.patchChildren` reads those trees
+and creates mounted nodes only where an insertion is required. Visual ports
+keep their own baselines when the shell relocates a control or player indicator.
+For a solitaire card crossing columns, the replacement describes the update
+and the original live card retains its identity.
+
+The arena provider names cells, pieces and highlights through a host-local
+field region callback. The Web adapter retains unchanged parsed regions
+across phases and commits the retained roots after the patch. Public playback
+builds the field and participant visuals while the host holds the hand port.
+The provider builds the hand toolbar for live interaction.
+
 The tokenizer recognizes quoted attributes, comments, HTML void tags, SVG
 self-closing tags and title/textarea text. Duplicate keys, unbalanced structures,
 raw script/style content and excessive fragment counts use the native full path;
@@ -504,6 +721,24 @@ older packs use their existing physical keys without changing saved rule version
 включён в его публичные кадры; самостоятельные действия сохраняют свой feedback.
 Это правило SDK, без ветвлений по ID игры.
 
+В Studio очередь кадров ждёт завершения того проигрывателя, которому
+принадлежит переход. Для авторского плана это проигрыватель сцены, для
+отдельных событий это `GameFeedback`. При занятом переходе игровой ввод
+закрыт. Явная навигация отменяет показ и освобождает очередь.
+
+Звук публичной фазы задаёт пак в её группе через
+`{id, kind: 'sound', sounds: ['cue-id']}`. Проигрыватель запускает сигнал
+после показа кадра в контексте той же фазы. Следующая группа ждёт завершения
+звука и анимаций с конечной длительностью и выдерживает заданную длительность
+показа. Отмена передаётся звуковому порту через сигнал
+того же запуска. Сценарный отчёт SDK читает эти объявления из разрешённой
+сцены.
+
+Живой ход и явное воспроизведение истории получают отдельные запуски одного
+плана. Открытие сохранения, переход назад и выбор произвольного кадра показывают
+его в завершённом состоянии. Контроллер истории передаёт намерение воспроизвести
+следующий видимый шаг, который может объединять несколько ревизий.
+
 ### Начальный снимок восстановленного окна
 
 Первый авторизованный снимок живого окна — текущая точка состояния, а не новый
@@ -527,6 +762,8 @@ pulses do not own presentation time. Reduced motion keeps static colours.
 
 After committed effects, GameFeedback appends an owned `turn-handoff` cue. Its
 outgoing/incoming scales come from `PlayroomGameFlow.turnHandoff` (.96/1.07).
+If another batch is already queued when this cue starts, the markers stay
+held until the last queued batch reaches its handoff cue.
 The cue switches displayed turn/next markers together, then pulses whole primary
 player panels through `PlayroomMotion.pulseParticipant`. This port freezes the
 two affected DOM visuals in the existing fixed motion layer, so scaling never
@@ -572,6 +809,13 @@ Other affected stack placements settle after the named departures. Routes withou
 this opt-in retain their existing timing. Instant/reduced motion, interruption,
 resize and cleanup use the existing shared motion lifecycle.
 
+For a destination route without separate authored checkpoints, adjacent
+same-revision capture events can share the movement cue. The motion surface
+signals contact at the start of the defending objects' departure. The feedback
+player uses that signal to highlight affected players and request capture audio
+without delaying the approach. The plan context owns pause and cancellation.
+The committed events retain their journal order.
+
 ## Public player-card status
 
 Packs using this slot declare `sdkFeatures: ["player-status-v1"]`; older hosts reject the update instead of silently losing status information. A Web renderer may supply `playerContent[i].statusHTML` as a string of already authorized public status markup, like `handHTML`. The shared player card owns its right-aligned `.player-status` slot, wrapping and named `player-status` inline-size container. Pack content can use container queries for compact variants. Pack CSS styles only its own markup; it never positions `.player-data` or other application components. Public-frame player cards use the same slot, so indicators follow the displayed state rather than the final authority state.
@@ -579,5 +823,7 @@ Packs using this slot declare `sdkFeatures: ["player-status-v1"]`; older hosts r
 `statusMinWidth` optionally declares the smallest useful width (integer 24–320px, default24). The shared card wraps the whole status slot before shrinking it below this width; its container lets the renderer switch between full and compact contents without moving the card.
 
 ## Общая история и переходы
+
+`presentation/transition.js` выбирает звуковые события и переносы из уже разрешённой проекции. Локальный экран, authority, восстановление сетевого кадра и Studio используют общий фильтр зрителя. Каждый вход передаёт события нужной ревизии или указывает границу уже показанной истории. Перенос без отдельного ограничения передаётся по ссылке. Кадр с эффектами добавляет идентификатор и ревизию.
 
 `presentation/transition.js` определяет переход по авторизованным событиям для игры, истории и SDK. Локальные ходы и просмотр используют один feedback/EventPlan/PlanPlayer/Scheduler. Переход вперёд на соседний presentation checkpoint проигрывает обычные события; переход назад и произвольный jump восстанавливают checkpoint без специальных правил перемещения карт в колоду. Во время упорядоченного переноса сохраняется прежняя видимая верхняя карта стопки, последующие прилёты рисуются выше предыдущих.

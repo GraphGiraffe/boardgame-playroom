@@ -32,7 +32,9 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       if (!isRecord(options)) throw new Error(globalThis.PlayroomMessages.text("ui.session.d42d73265b68"));
       const packVersion = options.packVersion || engine.get(game).version || '0.1.0';
       const configured=clone({...options, seed:options.seed??Math.random().toString(36).slice(2), packVersion}),now=clockPort(runtime),createdAt=readTime(now);
-      const initial=engine.createGame(game,clone(configured));
+      // The series receipt is saved with the session and stays outside pack rules.
+      const {matchSeries,...gameOptions}=configured;
+      const initial=engine.createGame(game,clone(gameOptions));
       // Freeze resolved names/preset as well as entropy; future UI defaults are not replay inputs.
       const ownedOptions=freeze({...configured,preset:initial.preset,players:initial.players.map((player,index)=>({...configured.players?.[index],name:player.name,bot:player.bot,...(player.avatar?{avatar:player.avatar}:{})}))});
       records.set(this, {engine, game, options: ownedOptions, now, createdAt, updatedAt: createdAt,
@@ -51,7 +53,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
         // History is lazy, but an active restored match must not replay its
         // entire prefix again whenever the next committed revision is reviewed.
         for(let index=replay.current.move;index<record.actions.length;index++){
-          const entry=record.actions[index];for(const {index,...metadata}of entry.players||[])replay.setPlayerMetadata(index,metadata);entry.actor===-1?replay.advanceClock(entry.command.now):replay.act(entry.actor,entry.command,entry.now===undefined?{}:{now:entry.now});
+          const entry=record.actions[index];for(const {index,...metadata}of entry.players||[])replay.setPlayerMetadata(index,metadata);entry.actor===-1?replay.advanceClock(entry.command.now,entry.command.control):replay.act(entry.actor,entry.command,entry.now===undefined?{}:{now:entry.now});
         }
         if(Codec.fingerprint(Session.storageState(this.engine,replay.current))!==Codec.fingerprint(Session.storageState(this.engine,this.current)))throw Error('CHECKPOINT_HISTORY_MISMATCH');
         record.replaySession=replay;return replay.states;
@@ -59,16 +61,21 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     }
     get clockTime(){const r=records.get(this);return Math.max(r.clockTime??0,this.current.clock??0);}
     setClockTime(now){if(!Number.isSafeInteger(now)||now<this.clockTime)throw Error('CLOCK_INVALID');records.get(this).clockTime=now;}
-    prepareClock(now){if(!Number.isSafeInteger(now)||now<this.clockTime)throw Error('CLOCK_INVALID');const r=records.get(this),next=r.history.prepare(previous=>this.engine.advanceClock(previous,now));if(next!==this.current){r.preparedActions||=new WeakMap();r.preparedActions.set(next,freeze({actor:-1,command:{type:'host-clock-v1',now}}));}return next;}
-    advanceClock(now){return this.commitPrepared(this.prepareClock(now));}
+    prepareClock(now,control){if(!Number.isSafeInteger(now)||now<this.clockTime)throw Error('CLOCK_INVALID');const r=records.get(this),next=r.history.prepare(previous=>this.engine.advanceClock(previous,now,control));if(next!==this.current){r.preparedActions||=new WeakMap();r.preparedActions.set(next,freeze({actor:-1,command:{type:'host-clock-v1',now,...(control===undefined?{}:{control:clone(control)})}}));}return next;}
+    advanceClock(now,control){return this.commitPrepared(this.prepareClock(now,control));}
     get createdAt() { return records.get(this).createdAt; }
     get updatedAt() { return records.get(this).updatedAt; }
     get current() { return records.get(this).history.current; }
     get previous() { return records.get(this).history.states.at(-2); }
+    get lastCommitWasClock() { return records.get(this).lastCommitWasClock===true; }
     get historyLength() { return this.current.move+1; }
     initialSave(){const record=records.get(this);return clone(record.replayInitial||{...envelope(this),states:[record.history.states[0]]});}
     preparedAction(next){return records.get(this).preparedActions?.get(next)||null;}
-    static storageState(engine,state){const value=clone(engine.storageState?.(state)||state);value.events=value.events.slice(-4);return value;}
+    static storageState(engine,state){
+      const value=engine.storageState?.(state)||state;
+      // Checkpoints own the latest facts; the command log retains the rest.
+      return clone({...value,events:value.events.slice(-4)});
+    }
     // Room membership is authority-owned. Install the replacement roster before
     // the next real move, retaining historical players and event attribution.
     get metadataRevision(){return records.get(this).metadataRevision||0;}
@@ -127,9 +134,10 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       try { record.history.commit(next); }
       catch(error) {if(error.code==='HISTORY_PREPARED_INVALID')throw Error('Prepared transition is no longer current');throw error;}
       if(next===previous)return previous;
+      const entry=record.preparedActions?.get(next);
+      record.lastCommitWasClock=entry?.actor===-1;
       if(next.clock!==undefined)record.clockTime=Math.max(record.clockTime??0,next.clock);
       if(record.actions){
-        const entry=record.preparedActions.get(next);
         // A missing command must never produce an incomplete replay log.
         if(entry){record.actions.push(entry);record.preparedActions.delete(next);}else record.actions=null;
       }
@@ -171,7 +179,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       if(!Array.isArray(actions)||!state||state.game!==session.game||state.packVersion!==session.packVersion||state.move!==actions.length||state.players.length!==session.current.players.length||state.preset!==session.current.preset||state.openHands!==session.current.openHands||!Number.isSafeInteger(updatedAt)||updatedAt<session.createdAt)throw Error('CHECKPOINT_INVALID');
       engine.validateState(state);
       if(Codec.fingerprint(state)!==checkpoint.fingerprint)throw Error('CHECKPOINT_INVALID');
-      for(const entry of actions){if(!isRecord(entry)||!Number.isInteger(entry.actor)||(entry.actor<0&&!(entry.actor===-1&&entry.command?.type==='host-clock-v1'&&Number.isSafeInteger(entry.command.now)&&entry.command.now>=0))||entry.actor>=state.players.length||!isRecord(entry.command)||Object.keys(entry).some(key=>!['actor','command','players','now'].includes(key)))throw Error('CHECKPOINT_ACTION_INVALID');}
+      for(const entry of actions){if(!isRecord(entry)||!Number.isInteger(entry.actor)||(entry.actor<0&&!(entry.actor===-1&&Codec.validClockCommand(entry.command)))||entry.actor>=state.players.length||!isRecord(entry.command)||Object.keys(entry).some(key=>!['actor','command','players','now'].includes(key)))throw Error('CHECKPOINT_ACTION_INVALID');}
       record.replayInitial=freeze(clone(initial));record.actions=freeze(clone(actions)).slice();record.preparedActions=new WeakMap();
       record.history=history([clone(state)],engine);record.updatedAt=updatedAt;
       return session;
@@ -187,7 +195,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
         for(const entry of log.actions){
           for(const {index,...metadata} of entry.players||[])replay.setPlayerMetadata(index,metadata);
           const before=replay.current;
-          entry.actor===-1?replay.advanceClock(entry.command.now):replay.act(entry.actor,entry.command,entry.now===undefined?{}:{now:entry.now});
+          entry.actor===-1?replay.advanceClock(entry.command.now,entry.command.control):replay.act(entry.actor,entry.command,entry.now===undefined?{}:{now:entry.now});
           if(replay.current===before)throw Error('No-op in action history');
         }
         if(Codec.fingerprint((log.encoding==='actions-v2'||log.encoding==='actions-v3'&&log.base==='actions-v2')?Session.storageState(engine,replay.current):replay.current)!==log.end.fingerprint)throw Error('Action history mismatch');

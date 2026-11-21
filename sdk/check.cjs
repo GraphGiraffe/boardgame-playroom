@@ -24,12 +24,15 @@ function checkSource({file,source}){
  walk(tree,null);return diagnostics.slice(0,100);
 }
 function prepareProject(directory,options){
- const p=loadProject(directory,options),sources=[...p.dependencies,...p.rules,...p.helpers,...p.presentation];
+ const p=loadProject(directory,options),sources=[...p.dependencies,...p.rules,...p.helpers,...p.presentation,...p.support];
  const diagnostics=sources.flatMap(checkSource),assets=p.resourceAudit||auditAssets(p.root);
  if(p.descriptor.checkTypes===true){
   // Ignore project tsconfig/plugins and installation scripts. Check explicit
   // authored files with the canonical SDK declarations and no emit.
-  const files=[...p.rules,...p.presentation,...p.helpers,...p.types].map(f=>path.join(p.root,f.file));
+  // Imported collection profiles are libraries. Author code consumes their
+  // public declarations; their JS still goes through source and VM checks.
+  const files=[...p.rules,...p.presentation.filter(f=>!f.file.startsWith('shared/presentation/')),
+   ...p.helpers,...p.support,...p.types].map(f=>path.join(p.root,f.file));
   const config={allowJs:true,checkJs:true,noEmit:true,target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.CommonJS,strict:true,skipLibCheck:true,types:[]};
   const declarations=path.join(__dirname,'contracts.d.ts'),allowed=new Set([...files,declarations,path.join(p.root,'sdk/contracts.d.ts')].map(name=>path.resolve(name)));
   const libraries=path.dirname(ts.getDefaultLibFilePath(config)),host=ts.createCompilerHost(config),read=host.readFile,exists=host.fileExists;

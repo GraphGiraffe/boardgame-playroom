@@ -1,6 +1,37 @@
 'use strict';
 const {test}=require('node:test'),assert=require('node:assert/strict');
 const Flow=require('../core/game-flow.js');
+const ScreenController=require('../application/game-screen-controller.js');
+
+test('settlement returns input without a timer when the local action has no delay',async()=>{
+  const timers=new Map(),finished=[];
+  const controller=new ScreenController({clock:{
+    setTimeout(fn,ms){const id=Symbol();timers.set(id,{fn,ms});return id;},
+    clearTimeout(id){timers.delete(id);}
+  }});
+  let finishEffect;
+  const effect=new Promise(resolve=>{finishEffect=resolve;});
+  const shown=controller.transition({play:()=>effect,finish:token=>finished.push(token)});
+  await new Promise(setImmediate);
+  assert(controller.busy,'input waits for the actual effect');
+  finishEffect();
+  await new Promise(setImmediate);
+  assert.deepEqual(finished,[shown]);
+  assert.equal(controller.busy,false);
+  assert.equal(timers.size,0,'zero settle does not enqueue another browser task');
+
+  const delayed=controller.transition({settle:40,finish:token=>finished.push(token)});
+  await new Promise(setImmediate);
+  const [timer]=timers.values();
+  assert.equal(timer.ms,40);
+  assert(controller.busy);
+  controller.cancelTransition();
+  assert.equal(timers.size,0);
+  timer.fn();
+  assert.equal(delayed.cancelled,true);
+  assert.deepEqual(finished,[shown],'a cancelled timer cannot settle the screen');
+  controller.dispose();
+});
 
 test('All four speeds and quick-play use one policy regardless of authority transport',()=>{
   assert.deepEqual(Object.keys(Flow.presets),['instant','fast','normal','slow']);
@@ -165,6 +196,112 @@ test('plan clock controls platform animations, delayed labels and cleanup togeth
 });
 
 
+test('phase audio resumes remaining notes at the new rate and cancels only its own voices',async()=>{
+ const Audio=require('../core/audio.js'),Scheduler=require('../presentation/scheduler.js'),voices=[];
+ const parameter=()=>({setValueAtTime(value){this.startValue=value;},linearRampToValueAtTime(){},exponentialRampToValueAtTime(){}});
+ const context={state:'running',currentTime:0,destination:{},createGain:()=>({gain:parameter(),connect(){},disconnect(){}}),
+  createOscillator(){
+   const voice={frequency:parameter(),interrupts:0,connect(){},disconnect(){},
+    start(at){this.at=at;},stop(at){if(at===undefined)this.interrupts++;else this.end=at;}};
+   voices.push(voice);return voice;
+  }};
+ const audio=new Audio({enabled:true,contextFactory:()=>context}),player=new Scheduler().track('sound');
+ audio.registerPack('fixture',{
+  ui:{notes:[{frequency:200,duration:1}]},
+  cue:{notes:[{frequency:440,to:880,duration:1},{at:.7,frequency:330,duration:.1}]}
+ });
+ try{
+  await audio.unlock();
+  const ui=audio.play('ui',{pack:'fixture'}),plan={id:'audio',groups:[{duration:0,cues:[{id:'cue',kind:'sound'}]}]};
+  const active=player.play(plan,{effect:(_cue,phase)=>audio.present(['cue'],{pack:'fixture',signal:phase.signal,phase})});
+  assert.equal(voices.length,3);
+  context.currentTime=.405;player.pause();
+  assert.deepEqual(voices.map(v=>v.interrupts),[0,1,1]);
+  context.currentTime=4;player.setRate(2);
+  assert.equal(voices.length,3);
+  player.resume();assert.equal(voices.length,5);
+  assert(Math.abs(voices[3].frequency.startValue-440*Math.pow(2,.4))<.001);
+  assert(Math.abs(voices[3].end-voices[3].at-.305)<.001);
+  assert(Math.abs(voices[4].at-voices[3].at-.15)<.001);
+  player.cancel();assert.equal((await active).status,'cancelled');
+  assert.deepEqual(voices.map(v=>v.interrupts),[0,1,1,1,1]);
+  voices[0].onended();assert.equal(await ui,true);
+ }finally{player.cancel();audio.stop();}
+});
+
+test('pack samples warm the playback cache without unlocking or playing audio',async()=>{
+ const Audio=require('../core/audio.js');
+ let created=0,decodes=0,starts=0;
+ const gain=()=>({gain:{value:0,setValueAtTime(){},linearRampToValueAtTime(){}},connect(){},disconnect(){}});
+ const context={state:'running',currentTime:0,destination:{},createGain:gain,
+  decodeAudioData:async()=>{decodes++;return {duration:.1};},
+  createBufferSource:()=>({connect(){},disconnect(){},playbackRate:{value:1},start(){starts++;},stop(){}})};
+ const audio=new Audio({enabled:true,contextFactory:()=>{created++;return context;}});
+ const src='data:audio/wav;base64,AA==';
+ audio.registerPack('fixture',{first:{src},second:{src}});
+ assert.equal(audio.warmPack('fixture'),undefined);
+ assert.equal(created,0);
+ assert(await audio.unlock());
+ const pending=audio.warmPack('fixture');
+ assert.equal(audio.warmPack('fixture'),pending);
+ await pending;
+ assert.deepEqual([decodes,starts],[1,0]);
+ const played=audio.present(['first'],{pack:'fixture'});
+ assert.deepEqual([decodes,starts],[1,1]);
+ audio.stop();await played;
+});
+
+test('an expired sample never starts even if decoding settles before the timeout callback',async t=>{
+ const Audio=require('../core/audio.js');
+ let now=100,finishDecode,decodes=0,starts=0;
+ t.mock.method(performance,'now',()=>now);
+ const gain=()=>({gain:{value:0,setValueAtTime(){},linearRampToValueAtTime(){}},connect(){},disconnect(){}});
+ const context={state:'running',currentTime:0,destination:{},createGain:gain,
+  decodeAudioData:()=>{decodes++;return new Promise(resolve=>{finishDecode=resolve;});},
+  createBufferSource:()=>({connect(){},disconnect(){},playbackRate:{value:1},start(){starts++;},stop(){}})};
+ const audio=new Audio({enabled:true,contextFactory:()=>context});
+ audio.registerPack('fixture',{move:{src:'data:audio/wav;base64,AA=='}});
+ try{
+  assert(await audio.unlock());
+  const pending=audio.present(['move'],{pack:'fixture'});
+  now+=121;
+  finishDecode({duration:.1});
+  await new Promise(setImmediate);
+  assert.deepEqual([decodes,starts],[1,0],'a ready callback after the deadline cannot play the old cue');
+  assert.equal(await pending,false);
+  const cached=audio.present(['move'],{pack:'fixture'});
+  assert.deepEqual([decodes,starts],[1,1],'the next cue may use the now warm sample');
+  audio.stop();await cached;
+ }finally{audio.stop();}
+});
+
+test('a serial preview supersedes its own sounds and preserves an active game phase',async()=>{
+ const Audio=require('../core/audio.js'),Scheduler=require('../presentation/scheduler.js'),voices=[];
+ const parameter=()=>({setValueAtTime(){},linearRampToValueAtTime(){},exponentialRampToValueAtTime(){}});
+ const context={state:'running',currentTime:0,destination:{},createGain:()=>({gain:parameter(),connect(){},disconnect(){}}),
+  createOscillator(){
+   const voice={frequency:parameter(),interrupts:0,connect(){},disconnect(){},start(){},stop(at){if(at===undefined)this.interrupts++;}};
+   voices.push(voice);return voice;
+  }};
+ const audio=new Audio({enabled:true,contextFactory:()=>context}),player=new Scheduler().track('game-sound');
+ audio.registerPack('fixture',Object.fromEntries(['game','preview','next'].map(id=>[id,{notes:[{frequency:440,duration:1}]}])));
+ try{
+  assert(await audio.unlock());
+  const active=player.play({id:'move-audio',groups:[{duration:0,cues:[{id:'game',kind:'sound'}]}]},
+   {effect:(_cue,phase)=>audio.present(['game'],{pack:'fixture',signal:phase.signal,phase})});
+  const first=audio.sequence(['preview'],{pack:'fixture'}),second=audio.sequence(['next'],{pack:'fixture'});
+  assert.deepEqual(voices.map(voice=>voice.interrupts),[0,1,0]);
+  assert.equal(await first,false);
+  player.cancel();assert.equal((await active).status,'cancelled');
+  assert.deepEqual(voices.map(voice=>voice.interrupts),[1,1,0]);
+  voices.at(-1).onended();assert.equal(await second,true);
+  const close=new AbortController(),closing=audio.sequence(['preview','next'],{pack:'fixture',signal:close.signal});
+  voices.at(-1).onended();await new Promise(setImmediate);
+  close.abort();assert.equal(await closing,false);
+  assert.equal(voices.length,4,'aborting a sequence in its gap prevents the next cue');
+ }finally{player.cancel();audio.stop();}
+});
+
 test('a scene commit gates simultaneous visual and audio effects, including cancellation',async()=>{
  const Scheduler=require('../presentation/scheduler.js'),executor=new Scheduler(),player=executor.track('orchestration'),calls=[];
  let commit,visual,audio;
@@ -179,6 +316,54 @@ test('a scene commit gates simultaneous visual and audio effects, including canc
  audio();assert.equal((await pending).status,'complete');assert.deepEqual(calls,['visual','audio','after']);
  let late,signal;const cancelled=player.play({...plan,id:'cancelled'},{group:(_,g,context)=>{signal=context.signal;return new Promise(resolve=>late=resolve);},effect:()=>assert.fail('late scene must not start effects')});
  player.cancel();late();await cancelled;assert(signal.aborted);await new Promise(setImmediate);
+});
+
+test('long synchronous phase runs drain in order up to each real wait',async()=>{
+ const Scheduler=require('../presentation/scheduler.js'),timers=new Map();let timerId=0,finishSound;
+ const player=new Scheduler({now:()=>0,setTimeout:(fn,ms)=>{timers.set(++timerId,{fn,ms});return timerId;},clearTimeout:id=>timers.delete(id)}).track('long');
+ const empty=Array.from({length:6000},()=>({duration:0,cues:[]}));
+ const plan={id:'long',groups:[...empty,{duration:150,cues:[{id:'sound',kind:'sound'}]},...empty]};
+ const mounted=[],errors=[];
+ const pending=player.play(plan,{group:index=>{mounted.push(index);},effect:()=>new Promise(resolve=>{finishSound=resolve;}),error:error=>errors.push(error.name)});
+ assert.deepEqual(errors,[]);
+ assert.equal(mounted.length,empty.length+1);
+ const [[id,timer]]=[...timers];assert.equal(timer.ms,150);
+ timers.delete(id);timer.fn();await new Promise(setImmediate);
+ assert.equal(mounted.length,empty.length+1,'the sound still owns the current group');
+ finishSound();assert.deepEqual(await pending,{status:'complete'});
+ assert.deepEqual(mounted,plan.groups.map((_,index)=>index));
+});
+
+test('a pause requested by a synchronous scene mount holds its effects until resume',async()=>{
+ const Scheduler=require('../presentation/scheduler.js');
+ for(const pauseAt of ['initial','group']){
+  const player=new Scheduler().track('mount-pause'),seen=[];
+  const pending=player.play({id:'mount-pause',groups:[{duration:0,cues:[{id:'sound',kind:'sound'}]}]}, {
+   initial(){seen.push('initial');if(pauseAt==='initial')player.pause();},
+   group(){seen.push('group');if(pauseAt==='group')player.pause();},
+   effect(){seen.push('sound');}
+  });
+  assert.deepEqual(seen,pauseAt==='initial'?['initial']:['initial','group']);
+  player.resume();
+  assert.deepEqual(seen,['initial','group','sound']);
+  assert.deepEqual(await pending,{status:'complete'});
+ }
+});
+
+test('changing rate during a mount arms a single timer after the mount',async()=>{
+ const Scheduler=require('../presentation/scheduler.js'),timers=new Map();let id=0;
+ const player=new Scheduler({now:()=>0,setTimeout:(fn,ms)=>{timers.set(++id,{fn,ms});return id;},clearTimeout:key=>timers.delete(key)}).track('mount-rate');
+ const pending=player.play({id:'mount-rate',groups:[{duration:100,cues:[]}]},{group(){player.setRate(2);assert.equal(timers.size,0);}});
+ assert.deepEqual([...timers.values()].map(timer=>timer.ms),[50]);
+ player.cancel();assert.deepEqual(await pending,{status:'cancelled'});assert.equal(timers.size,0);
+});
+
+test('a cue that fails after a pause settles the plan with an error',async()=>{
+ const Scheduler=require('../presentation/scheduler.js'),player=new Scheduler().track('resume-error'),errors=[];
+ const pending=player.play({id:'resume-error',groups:[{duration:0,cues:[{id:'sound',kind:'sound'}]}]}, {
+  group(){player.pause();},effect(){throw Error('fixture audio failure');},error:error=>errors.push(error.message)
+ });
+ player.resume();assert.deepEqual(await pending,{status:'failed'});assert.deepEqual(errors,['fixture audio failure']);
 });
 
 

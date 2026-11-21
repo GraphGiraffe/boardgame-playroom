@@ -67,6 +67,7 @@ module.exports = {
     {"file": "domino-layout.test.cjs", "profiles": [], "subblock": "games/layout"},
     {"file": "compact-hand.test.cjs", "profiles": ["layout"], "subblock": "games/layout"},
     {"file": "uno-hand-size.test.cjs", "profiles": ["layout"], "subblock": "games/layout"},
+    {"file": "one-oh-one-rules.test.cjs", "profiles": [], "subblock": "games/actions"},
     {"file": "uno-controls.test.cjs", "profiles": [], "subblock": "games/actions"},
     {"file": "uno-drag.test.cjs", "profiles": [], "subblock": "games/actions"},
     {"file": "uno-feedback.test.cjs", "profiles": [], "subblock": "games/actions"},

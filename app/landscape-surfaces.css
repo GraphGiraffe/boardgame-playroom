@@ -1,6 +1,5 @@
 /* Short landscape uses a side rail and bounded forms, not stretched portrait rows. */
 @media(orientation:landscape) and (min-width:600px) and (max-height:600px){
- :is(#modal-root,[data-ui-surface-exit]) .modal[data-ui-surface="screen"]{max-width:1040px!important;margin-inline:auto}
  :is(#modal-root,[data-ui-surface-exit]) .modal[data-ui-surface="screen"]>.modal-head{min-height:44px;margin-bottom:6px;padding-bottom:6px}
  :is(#modal-root,[data-ui-surface-exit]) .modal[data-ui-surface="screen"]>.modal-body{padding-top:4px;padding-bottom:8px}
  .parameter-screen-content{display:grid;grid-template-columns:8.5rem minmax(0,1fr);grid-template-rows:minmax(0,1fr) auto auto;align-content:start;gap:8px 16px;max-width:none;min-height:0}
@@ -39,7 +38,7 @@
  .account-modal [data-cloud-settings]{align-self:stretch;display:flex;min-width:0}
  .account-modal [data-cloud-settings]>.switch{width:100%;height:100%;margin:0;padding:12px 0;align-items:flex-start;border-bottom:1px solid var(--line)}
  .account-form input,.account-form button[type="submit"]{min-height:44px}
- :is(#modal-root,[data-ui-surface-exit]) .modal.local-profile-modal[data-ui-surface="panel"]{width:min(100%,40rem);max-width:40rem;max-height:calc(var(--ui-viewport-height,100dvh) - 8px);margin-inline:auto}
+ :is(#modal-root,[data-ui-surface-exit]) .modal.local-profile-modal[data-ui-surface="panel"]{max-height:calc(var(--ui-viewport-height,100dvh) - 8px);margin-inline:auto}
  .local-profile-modal .surface-panel-handle{min-height:24px;height:24px}
  #local-profile-editor{max-width:38rem;width:100%;margin-inline:auto}
  #local-profile-editor .field{margin:0;gap:4px}

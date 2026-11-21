@@ -117,6 +117,28 @@ test('portable history rejects stale audiences and only marks explicitly receive
  assert.equal(history.index,null);assert.equal(history.progress.presentedRevision,4);
 });
 
+test('history playback keeps its remaining delay and holds a fetched frame until resume',async()=>{
+ const History=require('../application/history-controller.js'),jobs=new Map(),modes=[];
+ let now=0,nextTimer=0,resolveFrame,failure;
+ const clock={now:()=>now,setTimeout(fn,ms){jobs.set(++nextTimer,{fn,ms});return nextTimer;},clearTimeout(id){jobs.delete(id);}};
+ const frame={kind:'snapshot',sessionId:'s',authorityEpoch:'e',game:'cards',packVersion:'1',viewer:0,revision:2,historyLength:3};
+ const history=new History({read:()=>new Promise(resolve=>{resolveFrame=resolve;})});
+ history.receive(frame);history.open=true;history.select(0,{...frame,revision:0});
+ const advance=()=>{const [id,job]=jobs.entries().next().value;jobs.delete(id);return job.fn();};
+ const playback=new History.Playback({clock,changed:mode=>modes.push(mode),error:error=>{failure=error;},
+  step:async ready=>{await history.seek(1,{ready});return null;}});
+ playback.start(100);now=30;playback.pause();assert.equal(jobs.size,0);
+ now=300;playback.resume();assert.equal([...jobs.values()][0].ms,70);
+ const current=advance();playback.pause();
+ resolveFrame({...frame,kind:'history',revision:1});await new Promise(setImmediate);
+ assert.equal(history.index,0);assert.equal(history.requested,1);
+ playback.resume();await current;
+ assert.equal(history.index,1);assert.deepEqual(modes,['play','pause','play','pause','play','still']);
+ playback.start(10);const cancelled=advance();playback.pause();resolveFrame({...frame,kind:'history',revision:1});
+ playback.stop();await cancelled;
+ assert.equal(history.requested,null);assert.equal(playback.mode,'still');assert.equal(jobs.size,0);assert.equal(failure,undefined);
+});
+
 test('one screen queue presents every recovered revision once and separates selection from projections',async()=>{
  const Controller=require('../application/game-screen-controller.js'),shown=[];
  const frame=revision=>({kind:'snapshot',sessionId:'one',authorityEpoch:'epoch',game:'cards',packVersion:'1.0.0',viewer:0,revision,historyLength:revision+1,state:{turn:0,data:{hands:[[{id:'card'}],[]]}}});
@@ -195,8 +217,8 @@ test('packs describe hand priority and physical seats without changing game iden
  const descriptor={api:3,family:'board',layout:{focus:'field',seats:['north-west','north-east','south-east','south-west'],duplicateSelf:true},elements:{field:'<div>field</div>'}};
  const circle=UI.composeScene(descriptor,{state,viewer:0});assert.match(circle,/data-seating="circle"/);assert.match(circle,/data-player-index="0" data-seat="north-west" data-seat-copy="true"/);assert.equal((circle.match(/data-player-index="0"/g)||[]).length,2);
  const row=UI.composeScene(descriptor,{state,viewer:0,seating:'row'});assert.match(row,/data-seating="row"/);assert.equal((row.match(/data-player-index="0"/g)||[]).length,1);
- assert.throws(()=>UI.composeScene({...descriptor,layout:{focus:'unknown'}},{state}),/layout policy/);
- assert.throws(()=>UI.composeScene({...descriptor,layout:{seats:['north']}},{state}),/layout policy/);
+ assert.throws(()=>UI.composeScene({...descriptor,layout:{focus:'unknown'}},{state}),{code:'LAYOUT_FOCUS_INVALID'});
+ assert.throws(()=>UI.composeScene({...descriptor,layout:{seats:['north']}},{state}),{code:'LAYOUT_SEATS_INVALID'});
  const cards=UI.composeScene({...descriptor,family:'cards',layout:{focus:'hands'}},{state,viewer:0});assert.match(cards,/data-layout-focus="hands"/);assert.doesNotMatch(cards,/data-action=/);
 });
 
@@ -298,6 +320,7 @@ test('shared landscape allocation reserves readable players and hand before the 
  }
  assert.equal(Screen.landscapeZones(740,390,7).columns,1,'narrow landscape scrolls one readable roster column');
  assert.equal(Screen.landscapeZones(844,390,7).columns,2,'two columns when both cards fit');
+ const stacked=Screen.landscapeZones(844,390,5,true,null,0,{height:256,availableHeight:302});assert.equal(stacked.columns,1,'measured cards that fit use one column');assert(stacked.field>Screen.landscapeZones(844,390,5).field,'the field receives the freed roster width');assert.equal(Screen.landscapeZones(844,390,7,true,null,0,{height:360,availableHeight:302}).columns,2,'a taller stack keeps the multi-column fallback');
  const tall=Screen.landscapeZones(900,600,5);
  assert(tall.field<600-12,'field yields width rather than squeezing side zones');
  const measured=Screen.landscapeZones(844,390,7,true,null,210);
@@ -353,8 +376,8 @@ test('pack overrides declare only the affected zones and reject unknown policies
  const scene={api:3,family:'board',elements:{field:'<div>field</div>'}};
  const html=UI.composeScene({...scene,layout:{overrides:{opponentsAlign:'end',playerIndicators:'below-avatar',mirrorIndicators:true}}},{state,viewer:0});
  assert.match(html,/data-opponents-align="end"/);assert.match(html,/data-player-indicators="below-avatar"/);assert.doesNotMatch(html,/data-field-columns/);
- assert.throws(()=>UI.composeScene({...scene,layout:{overrides:{gameName:'battleship'}}},{state}),/layout overrides/);
- assert.throws(()=>UI.composeScene({...scene,layout:{overrides:{fieldColumns:17}}},{state}),/layout overrides/);
+ assert.throws(()=>UI.composeScene({...scene,layout:{overrides:{gameName:'battleship'}}},{state}),{code:'LAYOUT_OVERRIDES_INVALID'});
+ assert.throws(()=>UI.composeScene({...scene,layout:{overrides:{fieldColumns:17}}},{state}),{code:'LAYOUT_COLUMNS_INVALID'});
 });
 
 

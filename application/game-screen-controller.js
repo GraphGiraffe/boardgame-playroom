@@ -62,8 +62,16 @@
   transition({capture=()=>null,render=()=>{},play=async()=>{},finish=()=>{},settle=0,context={}}={}){
    this.cancelTransition();const token={...context,timer:null,cancelled:false};this.operation=token;
    const shot=capture();render(token);
+   const complete=()=>{
+    if(this.operation!==token||token.cancelled||this.closed)return;
+    this.operation=null;
+    try{finish(token);}catch(error){this.report(error);}
+   };
    Promise.resolve().then(()=>play(shot)).catch(error=>{if(!token.cancelled)this.report(error);}).then(()=>{
-    if(token.cancelled||this.closed)return;token.timer=this.clock.setTimeout(()=>{if(this.operation!==token||token.cancelled)return;this.operation=null;finish(token);},Math.max(0,settle));
+    if(token.cancelled||this.closed)return;
+    // The effects have already settled. Only an authored delay owns a timer.
+    if(settle>0)token.timer=this.clock.setTimeout(complete,settle);
+    else complete();
    });return token;
   }
   cancelTransition(){const token=this.operation;if(!token)return;token.cancelled=true;if(token.timer!==null)this.clock.clearTimeout(token.timer);this.operation=null;}

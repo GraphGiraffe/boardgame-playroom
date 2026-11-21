@@ -38,9 +38,9 @@ test('Battleship manual placement rotates and preserves the fleet rules',()=>{
  assert.equal(s.data.ships[0][0].length,4);assert.equal(s.data.ships[0][0][1]-s.data.ships[0][0][0],10);assert(E.validateState(s));
 });
 
-test('Ludo teams finish together and Yatzy uses classic small straight',()=>{
+test('Ludo teams finish together and dice poker uses classic small straight',()=>{
  let s=E.createGame('ludo',{players:Array.from({length:4},(_,i)=>({name:'P'+i})),preset:'teams',diceCount:1,endMode:'winner',seed:17});s.turn=2;s.data.pawns[0]=[57,57,57,57];s.data.pawns[2]=[57,57,57,56];s.data.phase='move';s.data.diceCount=1;s.data.rollIndices=[0];s.data.dice=[1];s.data.used=[false];s=play(s,{type:'move',owner:2,pawn:3,dieIndex:0});assert.deepEqual(s.winners,[0,2]);
- s=create('yatzy');s.data.rolls=3;s.data.dice=[1,2,3,4,5];s=play(s,{type:'score',key:'smallStraight'});assert.equal(s.data.scores[0].smallStraight,15);
+ s=create('dice-poker');s.data.rolls=3;s.data.dice=[1,2,3,4,5];s=play(s,{type:'score',key:'smallStraight'});assert.equal(s.data.scores[0].smallStraight,15);
 });
 
 test('Ludo projection preserves stacked public identities, current roll and safe route anchors',()=>{
@@ -131,9 +131,9 @@ test('RC4 sea bot decisions depend only on observed shots',()=>{
  const tactical=E.clone(s);tactical.players.forEach(p=>p.bot=false);assert([cell-1,cell+1,cell-10,cell+10].includes(E.botAction(tactical).cell),'follow adjacent hit without a deliberate mistake');
 });
 test('Akulina shows who draws and publicly discards pairs without revealing the card',()=>{
- const Authority=require('../core/authority.js');let s=create('oldmaid',4);let pair=null;
+ const Transition=require('../presentation/transition.js');let s=create('oldmaid',4);let pair=null;
  for(const action of E.legalActions(s)){const next=play(s,action);if(next.data.discard.length>s.data.discard.length){pair={action,next};break;}}assert(pair);
- const cues=E.soundCues(pair.next,-1,s.events.at(-1).id);assert(cues.some(c=>c.id==='success'));const transfers=Authority.transfers(s,pair.next,E.project(pair.next,-1).events);assert.equal(transfers[0].from,'hand');assert.equal(transfers[0].fromPlayer,pair.action.target);assert.equal(transfers[0].player,s.turn);assert.equal('privateTo' in transfers[0],false);assert.equal(transfers.length,1);assert.equal(E.project(pair.next,-1).events.find(e=>e.reveal?.kind==='cards').reveal.cards.length,2);assert(!JSON.stringify(transfers).includes('♠'));
+ const cues=E.soundCues(pair.next,-1,s.events.at(-1).id);assert(cues.some(c=>c.id==='success'));const transfers=Transition.transferCues(E.project(pair.next,-1).events,-1,s.events.at(-1).id);assert.equal(transfers[0].from,'hand');assert.equal(transfers[0].fromPlayer,pair.action.target);assert.equal(transfers[0].player,s.turn);assert.equal('privateTo' in transfers[0],false);assert.equal(transfers.length,1);assert.equal(E.project(pair.next,-1).events.find(e=>e.reveal?.kind==='cards').reveal.cards.length,2);assert(!JSON.stringify(transfers).includes('♠'));
  const projected=E.project(pair.next,-1);assert.deepEqual(E.soundCues(projected,-1,s.events.at(-1).id),cues);
 });
 test('Akulina draw shows both participants to everyone, while the card stays private',()=>{
@@ -449,7 +449,7 @@ test('Snakes ±1 leaves the automatic second die unchanged',()=>{
 });
 
 test('Durak uses the canonical endMode schema and state without host aliases',()=>{
- const manifest=require('../packs/durak/manifest.json'),field=manifest.settings.find(f=>f.key==='endMode');
- assert(field);assert.equal(manifest.stateVersion,4);assert(!manifest.settings.some(f=>f.key==='endCondition'));assert.deepEqual(field.options.map(o=>o.value),['winner','last']);
+ const {manifest}=environment.bundles.find(bundle=>bundle.manifest.id==='durak'),fields=manifest.settings.fields,field=fields.find(f=>f.key==='endMode');
+ assert(field);assert.equal(manifest.stateVersion,4);assert(!fields.some(f=>f.key==='endCondition'));assert.deepEqual(Array.from(field.options,o=>o.value),['winner','last']);
  for(const endMode of ['winner','last']){const state=E.createGame('durak',{players:[{name:'A'},{name:'B'}],seed:71,endMode});assert.equal(state.data.endMode,endMode);assert(!Object.hasOwn(state.data,'endCondition'));assert(E.validateState(state));}
 });

@@ -1,0 +1,30 @@
+<aside id="author-panel" class="author-panel" aria-label="Инструменты студии" hidden>
+ <details open>
+  <summary>Параметры партии</summary>
+  <form id="options">
+   <div id="option-fields"></div>
+   <button type="submit">Начать партию</button>
+  </form>
+ </details>
+ <details>
+  <summary>Сохранение и проверка</summary>
+  <div class="author-actions">
+   <button id="bot">Ход бота</button>
+   <button id="reload">Перечитать код</button>
+   <button id="save">Скачать checkpoint</button>
+   <label>Восстановить checkpoint <input id="restore" type="file" accept=".json"></label>
+   <button id="check">Проверить пак</button>
+  </div>
+  <output id="author-check"></output>
+ </details>
+ <details>
+  <summary>Ассеты</summary>
+  <button id="assets">Показать размеры</button>
+  <div id="asset-list"></div>
+  <div id="asset-preview" aria-live="polite"></div>
+ </details>
+ <details>
+  <summary>События партии</summary>
+  <ol id="events"></ol>
+ </details>
+</aside>

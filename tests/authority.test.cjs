@@ -13,6 +13,17 @@ test('client retries identical envelope after lost acknowledgement; ignores old 
 test('MessagePort carries projected requests, updates and projected history',async()=>{const {authority,a,pub}=make();const {port1,port2}=new MessageChannel(),close=Port.serve(port1,a),transport=Port.client(port2),client=new Client(transport);try{await client.refresh();assert.equal(client.snapshot.viewer,0);assert.equal((await client.send({type:'increment'})).ok,true);const history=await client.history(1);assert.equal(history.kind,'history');assert.equal(history.viewer,0);assert.ok(!JSON.stringify(history).includes('SECRET1'));assert.ok(!JSON.stringify(pub.snapshot()).includes('SECRET EVENT'));}finally{client.close();close();authority.dispose();}});
 test('bot scheduling is authority-owned, injectable, and replaces old timers',()=>{const session=new Session(E,'authority-fixture',{players:[{name:'A'},{name:'Bot',bot:true}]}),scheduled=new Map();let id=0;const authority=new Authority(session,{clock:{setTimeout:(f,delay)=>{assert.equal(delay,500);scheduled.set(++id,f);return id;},clearTimeout:i=>scheduled.delete(i)}}),a=authority.connect(0);try{a.dispatch(cmd(a));authority.scheduleBot();authority.scheduleBot();assert.equal(scheduled.size,1);const task=[...scheduled.values()][0];scheduled.clear();task();assert.equal(authority.revision,2);assert.equal(scheduled.size,0);}finally{authority.dispose();}});
 
+test('repainting an unchanged bot turn preserves the original deadline and decision',()=>{
+ const session=new Session(E,'authority-fixture',{players:[{name:'A'},{name:'Bot',bot:true}]});
+ const tasks=[],authority=new Authority(session,{clock:{setTimeout:f=>tasks.push(f),clearTimeout:()=>{}}});
+ const run=(actor,action)=>authority.actBot(actor,action),options={run,onError:assert.fail};
+ try{
+  const player=authority.connect(0);player.dispatch(cmd(player));
+  authority.scheduleBot(options);authority.scheduleBot(options);
+  assert.equal(tasks.length,1);tasks[0]();assert.equal(authority.revision,2);
+ }finally{authority.dispose();}
+});
+
 test('any seated human controls pause, spectators cannot, and retries do not add history',async()=>{const {session,authority,a,b,pub}=make();const client=new Client({snapshot:a.snapshot,subscribe:a.subscribe,dispatch:a.dispatch});try{
  await client.refresh();const pause=P.command(a.snapshot(),{type:'session-pause',paused:true,expectedControlRevision:0},'pause-1');
  assert.equal((await a.dispatch(pause)).ok,true);assert.equal(client.snapshot.paused,true);assert.equal(client.snapshot.controlRevision,1);assert.equal(session.states.length,1);
@@ -71,4 +82,44 @@ test('local clients reuse owned immutable projections while external inputs stay
  const external=JSON.parse(JSON.stringify(authorized));external.revision++;external.state.move++;client.accept(external);assert.notEqual(client.snapshot,external);external.state.players[0].name='mutated';assert.notEqual(client.snapshot.state.players[0].name,'mutated');
  assert.equal(P.immutable(undefined),undefined);const shallow=Object.freeze({nested:{value:1}}),copy=P.immutable(shallow);shallow.nested.value=2;assert.equal(copy.nested.value,1);assert.notEqual(copy,shallow);assert.equal(P.immutable(copy),copy);const packet=P.immutable({snapshot:external});assert.equal(P.immutable(packet.snapshot),packet.snapshot,'nested wire snapshots are owned by the same immutable packet');
  }finally{authority.dispose();}
+});
+
+test('protocol composition shares validated model snapshots and detaches foreign objects',()=>{
+ const Values=require('../core/model-values.js');
+ const input={data:{hand:[{id:'visible-card'}]}},model=Values.composeRecord(input);
+ const frame=P.withProjection(P.composeRecord({state:P.composeRecord({data:model.data})}),model);
+ assert.equal(P.projectedModel(frame),model);
+ assert.equal(frame.state.data,model.data);
+ input.data.hand[0].id='changed';
+ assert.equal(frame.state.data.hand[0].id,'visible-card');
+ const foreign=Values.freeze({hand:[{id:'foreign'}]});
+ assert.notEqual(P.immutable(foreign),foreign,'deep freeze alone is not proof of model ownership');
+ const parsed=Values.parseSnapshot('{"number":-0}');
+ assert.equal(parsed.number,0);
+ assert.equal(P.immutable(parsed),parsed);
+ assert.throws(()=>Values.parseSnapshot('{"number":1e999}'),/JSON_INVALID/);
+ const received=P.parse(JSON.stringify(frame));
+ assert.deepEqual(received,frame);
+ assert.notEqual(received.state.data,frame.state.data);
+});
+
+test('buttons retain exact destinations and typed input survives a shared command type',()=>{
+ const short={type:'place'},left={type:'place',to:{x:1,y:2}},right={type:'place',to:{x:2,y:1}};
+ const actions=[short,left,right],button={type:'place',to:{y:2,x:1},label:'Left'};
+ const snapshot={actions:[button],state:{scene:{interactions:actions.map(command=>({command}))}}};
+ assert.equal(P.resolveChoice(actions,button,true),left);
+ const owned=P.immutable(actions),ownedIndex=P.choiceIndex(owned);
+ assert.equal(P.choiceIndex(owned),ownedIndex,'reuse the index for an owned immutable list');
+ assert.equal(ownedIndex(button,true),owned[1]);
+ const external=Object.freeze([{type:'place',to:{x:1,y:2}}]);
+ const before=P.choiceIndex(external);
+ external[0].to.x=3;
+ assert.notEqual(P.choiceIndex(external),before,'a shallow freeze does not prove command ownership');
+ assert.equal(P.resolveChoice(external,{type:'place',to:{x:3,y:2}}),external[0]);
+ assert.equal(P.resolveChoice([left,right],short,true),undefined);
+ assert.deepEqual(P.command(snapshot,button,'button').action,left);
+ const partialScene=P.withProjection({actions:[button],state:{scene:{interactions:[{command:short}]}}},{actions,inputs:[]});
+ assert.deepEqual(P.command(partialScene,button,'partial-scene').action,left);
+ const typed={type:'place',text:'Keep this field'};
+ assert.deepEqual(P.command(snapshot,typed,'input').action,typed);
 });

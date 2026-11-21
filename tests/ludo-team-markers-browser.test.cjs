@@ -30,7 +30,9 @@ test('Ludo team discs and first-player token match in lobby and game; board symb
     });
     const inspect=selector=>page.locator(selector).evaluateAll(elements=>elements.map(el=>{
       const rect=el.getBoundingClientRect(),disc=el.querySelectorAll('.medallion-art circle')[1];
-      return {width:rect.width,height:rect.height,color:getComputedStyle(disc).fill,viewBox:el.querySelector('svg')?.getAttribute('viewBox'),rings:el.querySelectorAll('.round-token-art>svg circle').length,content:el.textContent.trim()};
+      const art=el.querySelector('.medallion-art');
+      const circles=[...art.querySelectorAll(':scope > circle')].map(circle=>['cx','cy','r'].map(attr=>circle.getAttribute(attr)));
+      return {width:rect.width,height:rect.height,color:getComputedStyle(disc).fill,viewBox:art.getAttribute('viewBox'),circles,rings:el.querySelectorAll('.round-token-art>svg circle').length,content:el.textContent.trim()};
     }));
     const lobby=await inspect('.room-v021-row[data-participant-id] .player-medallion.is-team');
     assert.equal(lobby.length,4,'all four occupied team seats have a badge');
@@ -40,29 +42,32 @@ test('Ludo team discs and first-player token match in lobby and game; board symb
     assert(lobby.slice(1).every(item=>item.rings===0&&!item.content),'other teams have plain discs without a center dot');
     if(process.env.PLAYROOM_QA_DIR){fs.mkdirSync(process.env.PLAYROOM_QA_DIR,{recursive:true});await page.screenshot({path:path.join(process.env.PLAYROOM_QA_DIR,'ludo-teams-lobby.png')});}
     await page.locator('[data-command=lobby-start]').click();
-    await page.locator('.ludo-board').waitFor();
+    await page.locator('.sdk-cross-route').waitFor();
     assert.equal(await page.locator('.app-game-layout').getAttribute('data-seat-style'),'anchors','automatic layout preserves spatial seats');
     const game=await inspect('.seat-group .player-panel .player-medallion.is-team');
     assert.equal(game.length,4,'anchored game cards keep all four team badges');
     assert.equal(await page.locator('.layout-self .player-medallion.is-team').count(),1,'own controls repeat the same team badge');
-    assert(game.every(item=>item.width===lobby[0].width&&item.viewBox===lobby[0].viewBox),'lobby and game reuse the same disc artwork');
+    assert(game.every(item=>item.width>0&&Math.abs(item.width-item.height)<1),'game discs remain visible and square at the in-game scale');
+    const artwork=items=>items.map(({color,viewBox,circles,rings,content})=>JSON.stringify({color,viewBox,circles,rings,content})).sort();
+    assert.deepEqual(artwork(game),artwork(lobby),'lobby and game reuse the same disc artwork and team colors');
     assert.equal(game.filter(item=>item.rings===1).length,1);
-    const symbols=await page.locator('.ludo-safe-star,.ludo-start-arrow').evaluateAll(elements=>elements.map(el=>{
-      const symbol=el.getBoundingClientRect(),cell=el.closest('.ludo-cell').getBoundingClientRect();
-      return {kind:el.classList.contains('ludo-safe-star')?'star':'arrow',tag:el.tagName,paths:el.querySelectorAll('path').length,ratio:symbol.width/cell.width,offset:Math.hypot((symbol.left+symbol.right-cell.left-cell.right)/2,(symbol.top+symbol.bottom-cell.top-cell.bottom)/2)};
+    const symbols=await page.locator('.sdk-cross-safe-star,.sdk-cross-start-arrow').evaluateAll(elements=>elements.map(el=>{
+      const symbol=el.getBoundingClientRect(),cell=el.closest('.sdk-cross-cell').getBoundingClientRect();
+      return {kind:el.classList.contains('sdk-cross-safe-star')?'star':'arrow',tag:el.tagName,paths:el.querySelectorAll('path').length,ratio:symbol.width/cell.width,offset:Math.hypot((symbol.left+symbol.right-cell.left-cell.right)/2,(symbol.top+symbol.bottom-cell.top-cell.bottom)/2)};
     }));
     assert.equal(symbols.filter(item=>item.kind==='star').length,4);
     assert.equal(symbols.filter(item=>item.kind==='arrow').length,4);
     assert(symbols.every(item=>item.tag.toLowerCase()==='svg'&&item.paths===1&&item.offset<1),'symbols are centered SVGs');
     assert(symbols.filter(item=>item.kind==='star').every(item=>item.ratio>=.9),'stars fill almost the whole cell');
-    const baseOffsets=await page.locator('.ludo-base [data-motion-anchor]').evaluateAll(anchors=>anchors.map(anchor=>{
+    const baseOffsets=await page.locator('.sdk-cross-base [data-motion-anchor]').evaluateAll(anchors=>anchors.map(anchor=>{
       const id=anchor.dataset.motionAnchor.replace('base-','').split('-');
       const pawn=document.querySelector(`[data-entity="token-${id[0]}-${id[1]}"]`);
       const a=anchor.getBoundingClientRect(),b=pawn.getBoundingClientRect();
       return Math.hypot((a.left+a.right-b.left-b.right)/2,(a.top+a.bottom-b.top-b.bottom)/2);
     }));
+    assert.equal(baseOffsets.length,16,'the board shows every base slot');
     assert(baseOffsets.every(offset=>offset<1.5),`base pieces must sit on their circles: ${baseOffsets.join(', ')}`);
-    const rings=await page.locator('.ludo-pawn').first().evaluate(pawn=>{
+    const rings=await page.locator('.sdk-cross-pawn').first().evaluate(pawn=>{
       pawn.classList.add('is-playable');
       const playable=getComputedStyle(pawn),available={radius:playable.borderRadius,shadow:playable.boxShadow,outline:playable.outlineStyle};
       pawn.classList.add('is-selected');
@@ -93,15 +98,16 @@ test('Ludo touch selects a friendly pawn on a destination cell and commits throu
     await context.addInitScript(({saved,scale})=>{localStorage.clear();localStorage.setItem('playroom.player-profile.v1',JSON.stringify({version:1,id:'ludo-selection-owner',name:'Иван',createdAt:1,updatedAt:1}));localStorage.setItem('playroom.settings.v1',JSON.stringify({sound:false,tutorialsEnabled:false,quickPlay:false,animationSpeed:'instant',autoPass:false,interfaceScale:scale}));localStorage.setItem('playroom.session.v1',JSON.stringify(saved));},{saved,scale:viewport.scale});
     const page=await context.newPage();page.setDefaultTimeout(5000);const safe=await require('./account-sync-fixture.cjs').installFetch(context,async route=>route.fulfill({json:{}}));
     try{
-      await gotoLudo(page,server.url);await page.locator('.game-tile').first().waitFor();await page.evaluate(()=>PlayroomFirstTurnGuide.setEnabled('ludo',false));await page.locator('[data-hub-page=sessions]').click();await page.locator('.saved-game[data-saved-actions-toggle]').first().click();await page.locator('[data-resume-id]:visible').first().tap();await page.locator('.ludo-board').waitFor();
-      const pawnCenters=await page.locator('.ludo-pawn .pawn-token-art').evaluateAll(items=>items.map(svg=>({face:Number(svg.querySelector('.pawn-token-face').getAttribute('cy')),mark:Number(svg.querySelector('text').getAttribute('y'))})));assert(pawnCenters.length);assert(pawnCenters.every(item=>item.face===item.mark),'pawn numbers share the top face center');
+      await gotoLudo(page,server.url);await page.locator('.game-tile').first().waitFor();await page.evaluate(()=>PlayroomFirstTurnGuide.setEnabled('ludo',false));await page.locator('[data-hub-page=sessions]').click();await page.locator('.saved-game[data-saved-actions-toggle]').first().click();await page.locator('[data-resume-id]:visible').first().tap();await page.locator('.sdk-cross-route').waitFor();
+      const pawnCenters=await page.locator('.sdk-cross-pawn .pawn-token-art').evaluateAll(items=>items.map(svg=>({face:Number(svg.querySelector('.pawn-token-face').getAttribute('cy')),mark:Number(svg.querySelector('text').getAttribute('y'))})));assert(pawnCenters.length);assert(pawnCenters.every(item=>item.face===item.mark),'pawn numbers share the top face center');
       const initial=await page.evaluate(()=>JSON.stringify(PlayroomAppBridge.saveLibrary.current().session.export()));
       await page.locator('[data-entity="token-0-0"]').tap();assert.equal(await page.locator('[data-entity="token-0-0"]').getAttribute('aria-pressed'),'true');
       await page.locator('[data-entity="token-0-1"]').tap();assert.equal(await page.locator('[data-entity="token-0-1"]').getAttribute('aria-pressed'),'true');
       assert.equal(await page.evaluate(()=>JSON.stringify(PlayroomAppBridge.saveLibrary.current().session.export())),initial,'switching to the occupied pawn must not commit a move');
       await page.locator('[data-entity="token-0-0"]').tap();
       if(process.env.PLAYROOM_QA_DIR){fs.mkdirSync(process.env.PLAYROOM_QA_DIR,{recursive:true});await page.screenshot({path:path.join(process.env.PLAYROOM_QA_DIR,`ludo-occupied-${viewport.width}-scale${viewport.scale}.png`)});}
-      await page.locator('.layout-actions [data-action]').filter({visible:true}).first().tap();
+      const die=page.locator('.sdk-die:enabled').filter({visible:true}).first();
+      await die.tap();
       await page.waitForFunction(()=>PlayroomAppBridge.saveLibrary.current().session.current.move===1);
       const after=await page.evaluate(()=>PlayroomAppBridge.saveLibrary.current().session.current);
       assert.deepEqual(after.data.pawns[0],[9,9,-1,-1]);assert.deepEqual(after.data.used,[true,false]);assert.equal(after.move,1);assert.equal(safe.nativeSupabaseRequests,0);
@@ -120,7 +126,7 @@ test('Ludo history animates a failed roll even when the committed state belongs 
   const server=await serveBrowserFixture(path.resolve(__dirname,'..')),browser=await chromium.launch({headless:true,executablePath:executablePath(),args:['--no-sandbox','--disable-background-networking']}),context=await browser.newContext({viewport:{width:390,height:844}});
   try{
     await context.addInitScript(saved=>{localStorage.clear();localStorage.setItem('playroom.settings.v1',JSON.stringify({sound:false,animationSpeed:'fast'}));localStorage.setItem('playroom.session.v1',JSON.stringify(saved));},session.export());
-    const page=await context.newPage();page.setDefaultTimeout(3500);await gotoLudo(page,server.url);await page.locator('[data-hub-page=sessions]:visible').first().click();await page.locator('.saved-game[data-saved-actions-toggle]').first().click();await page.locator('[data-resume-id]:visible').first().click();await page.locator('.ludo-board').waitFor();
+    const page=await context.newPage();page.setDefaultTimeout(3500);await gotoLudo(page,server.url);await page.locator('[data-hub-page=sessions]:visible').first().click();await page.locator('.saved-game[data-saved-actions-toggle]').first().click();await page.locator('[data-resume-id]:visible').first().click();await page.locator('.sdk-cross-route').waitFor();
     await page.locator('[data-game-menu]').click();await page.locator('.game-menu-panel [data-command=history]').click();
     await page.evaluate(()=>{window.historyRolls=0;window.historyRollObserver=new MutationObserver(records=>{for(const record of records)for(const node of record.addedNodes)if(node.nodeType===1&&(node.matches('[data-motion-kind="roll"]')||node.querySelector('[data-motion-kind="roll"]')))historyRolls++;});historyRollObserver.observe(document.body,{childList:true,subtree:true});});
     await page.locator('[data-command="replay-play"]').click();await page.waitForFunction(()=>historyRolls>0).catch(async error=>{error.message+=' '+JSON.stringify(await page.evaluate(()=>({dice:[...document.querySelectorAll('[data-motion-lead]')].map(e=>({lead:e.dataset.motionLead,rect:e.getBoundingClientRect().toJSON()})),history:document.querySelector('#replay-range')?.value,notice:document.querySelector('.toast')?.textContent})));throw error;});
@@ -135,7 +141,7 @@ test('Ludo local bot resumes after menu settings and appearance interrupt a dice
  try{
   await context.addInitScript(saved=>{localStorage.setItem('playroom.player-profile.v1',JSON.stringify({version:1,id:'ludo-navigation-owner',name:'Иван',createdAt:1,updatedAt:1}));localStorage.setItem('playroom.settings.v1',JSON.stringify({sound:false,animationSpeed:'normal',quickPlay:false,autoPass:false}));localStorage.setItem('playroom.session.v1',JSON.stringify(saved));},saved);
   await gotoLudo(page,server.url);await page.locator('.game-tile').first().waitFor();await page.evaluate(()=>{PlayroomFirstTurnGuide.setEnabled('ludo',false);window.ludoNavTrace=[];window.ludoPlanPlayers=new Set();for(const name of ['scheduleBot','cancelBot']){const original=SessionAuthority.prototype[name];SessionAuthority.prototype[name]=function(...args){ludoNavTrace.push({kind:'authority',name,revision:this.revision,modals:document.querySelectorAll('#modal-root>*').length});return original.apply(this,args);};}for(const name of ['play','pause','resume','cancel']){const original=PlayroomPlanPlayer.prototype[name];PlayroomPlanPlayer.prototype[name]=function(...args){ludoPlanPlayers.add(this);ludoNavTrace.push({kind:'plan',name,index:this.run?.index,paused:this.run?.paused,done:this.run?.done});return original.apply(this,args);};}});
-  await page.locator('[data-hub-page=sessions]:visible').first().click();await page.locator('.saved-game[data-saved-actions-toggle]').first().click();await page.locator('[data-resume-id]:visible').first().click();await page.locator('.ludo-board').waitFor();
+  await page.locator('[data-hub-page=sessions]:visible').first().click();await page.locator('.saved-game[data-saved-actions-toggle]').first().click();await page.locator('[data-resume-id]:visible').first().click();await page.locator('.sdk-cross-route').waitFor();
   await page.waitForFunction(()=>{const state=PlayroomAppBridge.saveLibrary.current().session.current;return state.move===1&&state.turn===1&&state.data.phase==='move'&&document.querySelector('.table-shell>.scene')?.getAttribute('aria-busy')==='true';});
   const rolled=await page.evaluate(()=>{const state=PlayroomAppBridge.saveLibrary.current().session.current;return {move:state.move,turn:state.turn,phase:state.data.phase,dice:state.data.dice,sessionId:PlayroomAppBridge.saveLibrary.current().id};});report.steps.push({at:'bot-dice-presentation',...rolled});assert.deepEqual([...rolled.dice].sort(),[2,5]);
   await page.locator('[data-game-menu]').click();await page.locator('.game-menu-panel').waitFor();await page.locator('#modal-root>[data-surface-state=active] [data-game-menu-action][data-command=settings]').click();await page.locator('#modal-root>[data-surface-state=active] [data-settings-screen]').waitFor();
@@ -149,7 +155,7 @@ test('Ludo local bot resumes after menu settings and appearance interrupt a dice
   const pausedMove=await page.evaluate(()=>PlayroomAppBridge.saveLibrary.current().session.current.move);await page.waitForTimeout(800);assert.equal(await page.evaluate(()=>PlayroomAppBridge.saveLibrary.current().session.current.move),pausedMove,'explicit Pause retains the committed revision');await page.locator('.pause-cover [data-command=pause]').click();
   await page.locator('[data-game-menu]').click();await page.locator('[data-game-menu-action][data-command=home]').click();await page.locator('.game-tile').first().waitFor();
   await page.locator('[data-hub-page=profile]').click();await page.locator('[data-appearance-open]').click();await page.locator('#modal-root>[data-surface-state=active] .appearance-gallery-modal').waitFor();await page.locator('#modal-root>[data-surface-state=active] .modal-head [data-command=close-modal]').click();
-  await page.locator('[data-hub-page=sessions]:visible').first().click();await page.locator('.saved-game[data-saved-actions-toggle]').first().click();await page.locator('[data-resume-id]:visible').first().click();await page.locator('.ludo-board').waitFor();
+  await page.locator('[data-hub-page=sessions]:visible').first().click();await page.locator('.saved-game[data-saved-actions-toggle]').first().click();await page.locator('[data-resume-id]:visible').first().click();await page.locator('.sdk-cross-route').waitFor();
   const resumed=await page.evaluate(()=>({id:PlayroomAppBridge.saveLibrary.current().id,move:PlayroomAppBridge.saveLibrary.current().session.current.move}));assert.equal(resumed.id,rolled.sessionId);assert.equal(resumed.move,pausedMove,'home/appearance/resume does not duplicate a committed action');report.steps.push({at:'explicit-pause-home-appearance-resume',...resumed});
   const humanActions=[];let botEnteredAt=null;for(let step=0;step<8;step++){
    await page.waitForFunction(()=>document.querySelector('.table-shell>.scene')?.getAttribute('aria-busy')!=='true');
@@ -238,12 +244,62 @@ test('Ludo capture hovers over the destination, clears both victims, then settle
  state.turn=0;Object.assign(state.data,{phase:'move',dice:[2,3],used:[false,false]});state.data.pawns[0]=[4,6,-1,-1];state.data.pawns[1]=[45,45,-1,-1];assert(Core.validateState(state));
  const server=await serveBrowserFixture(path.resolve(__dirname,'..')),browser=await chromium.launch({headless:true,executablePath:executablePath(),args:['--no-sandbox','--disable-background-networking']}),context=await browser.newContext({viewport:{width:390,height:844},hasTouch:true,isMobile:true});
  try{const net=await require('./account-sync-fixture.cjs').installFetch(context,r=>r.fulfill({json:{}}));await context.addInitScript(saved=>{localStorage.setItem('playroom.player-profile.v1',JSON.stringify({version:1,id:'ludo-capture-owner',name:'Иван',createdAt:1,updatedAt:1}));localStorage.setItem('playroom.settings.v1',JSON.stringify({sound:false,tutorialsEnabled:false,quickPlay:false,animationSpeed:'fast',autoPass:false}));localStorage.setItem('playroom.session.v1',JSON.stringify(saved));},saved);
- const page=await context.newPage(),errors=[];page.setDefaultTimeout(6000);page.on('pageerror',e=>errors.push(e.message));await gotoLudo(page,server.url);await page.locator('.game-tile').first().waitFor();await page.locator('[data-hub-page=sessions]').click();await page.locator('.saved-game[data-saved-actions-toggle]').first().click();await page.locator('[data-resume-id]:visible').first().tap();await page.locator('.ludo-board').waitFor();await page.locator('[data-entity="token-0-0"]').tap();
- await page.evaluate(()=>{window.captureFrames=[];window.captureSeen=false;window.captureDone=false;const center=e=>{if(!e)return null;const r=e.getBoundingClientRect();return{x:r.x+r.width/2,y:r.y+r.height/2,width:r.width,height:r.height,z:+getComputedStyle(e).zIndex||0};};const run=()=>{const layer=document.querySelector('.playroom-motion-layer'),flight=id=>{const [,owner,pawn]=id.split('-');const label=(owner==='0'?'Иван':'Мика')+', фишка '+(+pawn+1)+':';return [...document.querySelectorAll('.playroom-motion-flight')].find(n=>n.querySelector('[aria-label]')?.getAttribute('aria-label').startsWith(label));};if(layer){captureSeen=true;captureFrames.push({t:performance.now(),actor:center(flight('token-0-0')),a:center(flight('token-1-0')),b:center(flight('token-1-1')),destination:center(document.querySelector('[data-motion-anchor="path-6"]'))});}if(captureSeen&&!layer){captureDone=true;return;}requestAnimationFrame(run);};requestAnimationFrame(run);});
- await page.locator('.layout-actions [data-action]').first().tap();await page.waitForFunction(()=>captureDone,{timeout:10000});
- const result=await page.evaluate(()=>{const center=e=>{const r=e.getBoundingClientRect();return{x:r.x+r.width/2,y:r.y+r.height/2};};return{frames:captureFrames,final:{actor:center(document.querySelector('[data-entity="token-0-0"]')),a:center(document.querySelector('[data-entity="token-1-0"]')),b:center(document.querySelector('[data-entity="token-1-1"]'))},pawns:PlayroomAppBridge.saveLibrary.current().session.current.data.pawns};});
- if(process.env.PLAYROOM_LUDO_EVIDENCE_DIR)fs.writeFileSync(path.join(process.env.PLAYROOM_LUDO_EVIDENCE_DIR,'capture-sequence.json'),JSON.stringify(result,null,2));const frames=result.frames.filter(f=>f.actor&&f.a&&f.b),distance=(a,b)=>Math.hypot(a.x-b.x,a.y-b.y);assert(frames.length>5,'actual live overlay frames sampled');const first=frames[0],departing=frames.find(f=>distance(f.a,first.a)>2||distance(f.b,first.b)>2);assert(departing,'victims visibly return to base');assert(departing.actor.y<departing.destination.y-departing.actor.height*.25,'actor hovers above destination before victims start');assert(departing.actor.z>departing.a.z,'hovered actor is above returning victims');
- const cleared=frames.find(f=>distance(f.a,result.final.a)<2&&distance(f.b,result.final.b)<2);assert(cleared,'both captured pawns reach their own base slots');assert(cleared.actor.y<cleared.destination.y-cleared.actor.height*.2,'actor waits above cell until both bases are reached');assert(distance(frames.at(-1).actor,result.final.actor)<2,'arrival ends in the exact final stack slot');assert.deepEqual(result.pawns.slice(0,2),[[6,6,-1,-1],[-1,-1,-1,-1]]);assert.equal(net.nativeSupabaseRequests,0);assert.deepEqual(errors,[]);
+ const page=await context.newPage(),errors=[];page.setDefaultTimeout(6000);page.on('pageerror',e=>errors.push(e.message));
+ await gotoLudo(page,server.url);await page.locator('.game-tile').first().waitFor();
+ await page.evaluate(()=>PlayroomFirstTurnGuide.setEnabled('ludo',false));
+ await page.locator('[data-hub-page=sessions]').click();await page.locator('.saved-game[data-saved-actions-toggle]').first().click();
+ await page.locator('[data-resume-id]:visible').first().tap();
+ const board=page.locator('.sdk-cross-route');
+ await board.waitFor();await board.locator('[data-entity="token-0-0"]').tap();
+ await board.locator('[data-entity="token-1-0"]').tap();
+ const flight=page.locator('.playroom-motion-flight[data-motion-kind="route"]');
+ await flight.waitFor({state:'attached'});
+ const motion=await flight.evaluate(actor=>{
+  const center=node=>{const {x,y,width,height}=node.getBoundingClientRect();return {x:x+width/2,y:y+height/2,height,z:Number(getComputedStyle(node).zIndex)||0};};
+  const movingPieces=[...actor.parentElement.querySelectorAll('.playroom-motion-flight[data-motion-kind="move"]')];
+  const board=document.querySelector('.sdk-cross-route');
+  // Motion clones intentionally carry no entity IDs. Match each flight to
+  // the final position of its live pawn, independently of the flight timing.
+  const finalPositions=['1-0','1-1','0-1'].map(id=>center(board.querySelector('[data-entity="token-'+id+'"]')));
+  const endpoints=movingPieces.map(node=>{
+   const animation=node.getAnimations()[0],time=animation.currentTime,timing=animation.effect.getTiming();
+   try{animation.currentTime=timing.delay+timing.duration-.01;return center(node);}
+   finally{animation.currentTime=time;}
+  });
+  const movingPawn=position=>movingPieces[endpoints.findIndex(end=>Math.hypot(end.x-position.x,end.y-position.y)<2)];
+  const victims=finalPositions.slice(0,2).map(movingPawn).filter(Boolean);
+  const stackShift=movingPawn(finalPositions[2])?.getAnimations()[0]?.effect.getTiming();
+  const actors=[actor,...victims],animations=actors.map(node=>node.getAnimations()[0]);
+  const times=animations.map(animation=>animation.currentTime);
+  const timing=animations.map(animation=>animation.effect.getTiming());
+  const [arrival,...departures]=timing;
+  if(departures.length!==2)return {timing};
+  const head=departures[0].delay,tail=Math.max(...departures.map(({delay,duration})=>delay+duration));
+  // Seek only these live animations. This samples exact boundaries even when
+  // Chromium skips frames during other browser tests.
+  const sample=time=>{animations.forEach(animation=>{animation.currentTime=time;});return actors.map(center);};
+  const destination=center(board.querySelector('[data-motion-anchor="path-6"]'));
+  try{return {timing,stackShift,destination,start:sample(0),hover:sample(head),cleared:sample(tail-.01),settled:sample(arrival.duration-.01)};}
+  finally{animations.forEach((animation,index)=>{animation.currentTime=times[index];});}
+ });
+ await page.locator('.playroom-motion-layer').waitFor({state:'detached'});
+ const final=await board.evaluate(board=>{
+  const center=id=>{const {x,y,width,height}=board.querySelector('[data-entity="token-'+id+'"]').getBoundingClientRect();return {x:x+width/2,y:y+height/2};};
+  return {positions:['0-0','1-0','1-1'].map(center),pawns:PlayroomAppBridge.saveLibrary.current().session.current.data.pawns};
+ });
+ if(process.env.PLAYROOM_LUDO_EVIDENCE_DIR)fs.writeFileSync(path.join(process.env.PLAYROOM_LUDO_EVIDENCE_DIR,'capture-sequence.json'),JSON.stringify({motion,final},null,2));
+ const [arrival,...departures]=motion.timing,distance=(a,b)=>Math.hypot(a.x-b.x,a.y-b.y);
+ assert.equal(departures.length,2,'two public victims return to base');
+ assert(departures.every(({delay,duration})=>delay>0&&delay===departures[0].delay&&delay+duration<arrival.duration),'victims depart together after the approach and finish before the attacker');
+ assert(motion.stackShift?.delay>=Math.max(...departures.map(({delay,duration})=>delay+duration)),'the friendly pawn shifts into the stack after both victims clear the cell');
+ assert(distance(motion.start[1],motion.hover[1])<1&&distance(motion.start[2],motion.hover[2])<1,'both victims remain on the cell during the approach');
+ for(const frame of [motion.hover,motion.cleared]){
+  assert(frame[0].y<motion.destination.y-frame[0].height*.2,'attacker hovers until both captures clear the destination');
+  assert(frame[0].z>frame[1].z&&frame[0].z>frame[2].z,'attacker stays above both returning victims');
+ }
+ for(const index of [1,2])assert(motion.cleared.slice(1).some(position=>distance(position,final.positions[index])<2),'victim reaches its exact base slot');
+ assert(distance(motion.settled[0],final.positions[0])<2,'attacker settles into the exact stack slot');
+ assert.deepEqual(final.pawns.slice(0,2),[[6,6,-1,-1],[-1,-1,-1,-1]]);assert.equal(net.nativeSupabaseRequests,0);assert.deepEqual(errors,[]);
 
  }finally{await context.close();await browser.close();await server.close();}
 });

@@ -327,26 +327,80 @@ print(json.dumps(snapshots))`],{cwd:root,maxBuffer:20*1024*1024}));
  }finally{await browser?.close();await new Promise(resolve=>server.close(resolve));}
 });
 
-test('built remote-catalog PWA starts and opens all preset avatars offline',{timeout:30000},async()=>{
+test('built remote-catalog PWA opens before WASM and plays its first installed pack offline',{timeout:45000},async()=>{
  const os=require('node:os'),http=require('node:http'),{execFileSync}=require('node:child_process'),{chromium,executablePath}=require('../scripts/codex/browser.cjs');
  const directory=fs.mkdtempSync(path.join(os.tmpdir(),'playroom-offline-avatar-'));
- execFileSync('python3',['-c','import build,sys;from pathlib import Path;build.write_directory(Path(sys.argv[1]),build.pwa_runtime_items(remote_catalog=True))',directory],{cwd:root,stdio:'pipe'});
- const server=http.createServer((req,res)=>{
+ const output=process.env.PLAYROOM_FIRST_BOOT_PWA||path.join(directory,'pwa'),pack=path.join(directory,'tictactoe.playroom-pack.json');
+ execFileSync('python3',['-c',`
+import build,sys
+from pathlib import Path
+output=Path(sys.argv[1])
+if not output.exists(): build.write_directory(output,build.pwa_runtime_items(remote_catalog=True))
+packs=Path('../playroom-paks').resolve()
+Path(sys.argv[2]).write_text(build.json_text(build.build_pack(packs/'packs/tictactoe',packs/'shared')))
+`,output,pack],{cwd:root,stdio:'pipe'});
+ let releaseWasm;const readyWasm=new Promise(resolve=>releaseWasm=resolve);
+ const server=http.createServer(async(req,res)=>{
   if(req.url.startsWith('/api/')){res.writeHead(200,{'Content-Type':'application/json'});return res.end(JSON.stringify({format:'playroom-catalog',version:1,collection:'test',packs:[]}));}
-  const file=path.resolve(directory,req.url==='/'?'index.html':req.url.slice(1).split('?')[0]);
-  if(!file.startsWith(directory+path.sep)||!fs.existsSync(file)||!fs.statSync(file).isFile()){res.writeHead(404);return res.end();}
+  const file=path.resolve(output,req.url==='/'?'index.html':req.url.slice(1).split('?')[0]);
+  if(!file.startsWith(output+path.sep)||!fs.existsSync(file)||!fs.statSync(file).isFile()){res.writeHead(404);return res.end();}
+  if(file.endsWith('.wasm'))await readyWasm;
   res.writeHead(200,{'Content-Type':({'.html':'text/html','.js':'text/javascript','.css':'text/css','.svg':'image/svg+xml','.json':'application/json','.webmanifest':'application/manifest+json'})[path.extname(file)]||'application/octet-stream'});res.end(fs.readFileSync(file));
  });
  await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));let browser;
  try{
   browser=await chromium.launch({headless:true,executablePath:executablePath(),args:['--no-sandbox']});const context=await browser.newContext({playroomProfile:false}),page=await context.newPage(),errors=[];page.on('pageerror',e=>errors.push(e.message));
-  await page.goto('http://127.0.0.1:'+server.address().port+'/');await page.locator('#profile-form').waitFor();await page.waitForFunction(()=>!!navigator.serviceWorker.controller);
+  let pageWasmRequests=0;page.on('request',request=>{if(new URL(request.url()).pathname.endsWith('.wasm'))pageWasmRequests++;});
+  await page.goto('http://127.0.0.1:'+server.address().port+'/');
+  await page.locator('#profile-form').waitFor({timeout:5000});
+  assert.equal(pageWasmRequests,0,'the page does not need QuickJS for the first profile');
+  releaseWasm();await page.waitForFunction(()=>!!navigator.serviceWorker.controller);
   await context.setOffline(true);await page.reload();await page.locator('#profile-form').waitFor();
   await page.locator('[data-avatar-picker]').click();assert.equal(await page.locator('.avatar-options img').count(),48);
   await page.waitForFunction(()=>[...document.querySelectorAll('.avatar-options img')].every(img=>img.complete&&img.naturalWidth===256));
-  const avatar=await page.evaluate(()=>PlayroomAvatars.items()[0].id);await page.locator('[data-avatar-option="'+avatar+'"]').click();await page.locator('#profile-form [name=playerName]').fill('Иван');await page.locator('#profile-form button[type=submit]').click();
-  assert.equal(await page.evaluate(()=>JSON.parse(localStorage.getItem('playroom.player-profile.v1')).avatar),avatar);assert.deepEqual(errors,[]);
- }finally{await browser?.close();await new Promise(resolve=>server.close(resolve));fs.rmSync(directory,{recursive:true,force:true});}
+  const avatar=await page.evaluate(()=>PlayroomAvatars.items()[0].id);await page.locator('[data-avatar-option="'+avatar+'"]').click();await page.locator('#profile-form [name=playerName]').fill('Иван');
+  await page.locator('#profile-form [name=installAllGames]').uncheck();
+  await page.locator('[data-profile-play-label]').click();await page.locator('.packs-empty-hub').waitFor();
+  assert.equal(await page.evaluate(()=>JSON.parse(localStorage.getItem('playroom.player-profile.v1')).avatar),avatar);
+  assert.equal(pageWasmRequests,0,'the empty profile and hub open offline without constructing a VM');
+  const UI=require('./browser-origin.cjs'),manager=await UI.openPacks(page);
+  await page.evaluate(()=>{
+   const fetchAsset=window.fetch;
+   window.fetch=(input,options)=>{
+    if(String(input).endsWith('.wasm')){
+     window.fetch=fetchAsset;
+     return Promise.resolve(new Response('',{status:503}));
+    }
+    return fetchAsset(input,options);
+   };
+  });
+  await manager.locator('#pack-file').setInputFiles(pack);
+  await manager.locator('[data-pack-install]').click();
+  await manager.locator('.pack-message').waitFor();
+  assert.equal(await page.evaluate(()=>PlayroomPacks.list().length),0,'a failed VM load cannot install an incomplete pack');
+  await manager.locator('[data-pack-install]').click();
+  await manager.locator('[data-installed-pack][data-pack-id=tictactoe]').waitFor();
+  await manager.locator('.modal-head [data-command=close-modal]').click();
+  assert.equal(pageWasmRequests,1,'the first pack obtains the precached WASM once');
+  const room=await UI.openGame(page,'tictactoe');
+  await page.evaluate(()=>{
+   const b=PlayroomAppBridge,r=b.room();
+   PlayroomFirstTurnGuide.setEnabled('tictactoe',false);
+   b.roomService.setLocalSeat(r.id,r.ownerId,'seat-2',{kind:'human',nickname:'Второй'});
+   b.roomService.configure(r.id,r.ownerId,{firstPlayerMode:'assigned',firstParticipantId:r.ownerId});
+   b.renderLobby();
+  });
+  await room.locator('[data-command=lobby-start]').click();
+  await page.locator('.sdk-mark-cell').first().click();
+  await page.waitForFunction(()=>PlayroomAppBridge.saveLibrary.current()?.session.current.move===1);
+  await page.locator('.table-shell>.scene[aria-busy=false]').waitFor();
+  await page.reload();
+  await UI.ready(page);
+  await page.waitForFunction(()=>globalThis.PlayroomAppBridge?.saveLibrary.current()?.session.current.move===1);
+  assert.equal(pageWasmRequests,2,'a new page with an installed pack restores the registry');
+  assert.equal(await page.evaluate(()=>PlayroomAppBridge.packs.list()[0]?.id),'tictactoe');
+  assert.deepEqual(errors,[]);
+ }finally{releaseWasm();await browser?.close();await new Promise(resolve=>server.close(resolve));fs.rmSync(directory,{recursive:true,force:true});}
 });
 
 test('staged update announces metadata only, keeps verified files after HTTP failure and resumes without redownloading',{timeout:30000},async()=>{
@@ -572,27 +626,62 @@ test('welcome offers app installation, defaults to all games and preserves an ex
 });
 
 
-test('update all crosses a real service worker restart then updates installed packs and preserves pinned saves',{timeout:90000,skip:!process.env.PLAYROOM_OLD_PWA||!process.env.PLAYROOM_NEW_PWA||!process.env.PLAYROOM_PREVIEW_CATALOG},async()=>{
- const oldRoot=path.resolve(process.env.PLAYROOM_OLD_PWA),newRoot=path.resolve(process.env.PLAYROOM_NEW_PWA),catalog=path.resolve(process.env.PLAYROOM_PREVIEW_CATALOG);
- const {chromium,executablePath}=require('../scripts/codex/browser.cjs'),fixture=await serveBuiltPreviewUpgrade(oldRoot,newRoot,{hold:()=>false}),browser=await chromium.launch({headless:true,executablePath:executablePath(),args:['--no-sandbox','--disable-background-networking']});
- const bundle=version=>{const folder=path.join(catalog,'files/uno',version);return JSON.parse(fs.readFileSync(path.join(folder,fs.readdirSync(folder).find(f=>f.endsWith('.json'))),'utf8'));};
+for(const {suffix,id,previous,unused,targetId,catalogPath} of [
+ {suffix:'',id:'uno',previous:'0.6.8-preview.16',unused:'0.6.8-preview.15',targetId:'uno',catalogPath:process.env.PLAYROOM_PREVIEW_CATALOG},
+ {suffix:' after a pack ID changes',id:'battleship',previous:'0.4.4',unused:'0.4.2',targetId:'fleet-grid',catalogPath:process.env.PLAYROOM_RENAMED_PACK_CATALOG},
+])test('update all crosses a real service worker restart then updates installed packs and preserves pinned saves'+suffix,{timeout:90000,skip:!process.env.PLAYROOM_OLD_PWA||!process.env.PLAYROOM_NEW_PWA||!catalogPath},async()=>{
+ const oldRoot=path.resolve(process.env.PLAYROOM_OLD_PWA),newRoot=path.resolve(process.env.PLAYROOM_NEW_PWA),catalog=path.resolve(catalogPath);
+ const {chromium,executablePath}=require('../scripts/codex/browser.cjs'),fixture=await serveBuiltPreviewUpgrade(oldRoot,newRoot,{hold:()=>false,catalogRoot:catalog}),browser=await chromium.launch({headless:true,executablePath:executablePath(),args:['--no-sandbox','--disable-background-networking']});
+ const bundle=version=>{const folder=path.join(catalog,'files',id,version);return JSON.parse(fs.readFileSync(path.join(folder,fs.readdirSync(folder).find(f=>f.endsWith('.json'))),'utf8'));};
  try{
   const context=await browser.newContext({viewport:{width:740,height:390},reducedMotion:'reduce'}),page=await context.newPage(),errors=[];page.on('pageerror',e=>errors.push(e.message));
   const network=await require('./account-sync-fixture.cjs').installFetch(context,route=>route.fulfill({json:{}}));
   await page.goto(fixture.url);await page.waitForFunction(()=>navigator.serviceWorker.controller&&globalThis.PlayroomAppBridge);
-  const previous='0.6.8-preview.16',unused='0.6.8-preview.15';
-  await page.evaluate(async({p,u})=>{await PlayroomPacks.install(PlayroomPacks.prepare(p),{activate:true});const session=new TabletopSession(TabletopCore,'uno',{seed:17,players:[{name:'A'},{name:'B'}]});await PlayroomAppBridge.saveLibrary.activateAsync(session,'update-all-pinned');await PlayroomPacks.install(PlayroomPacks.prepare(u),{activate:false});localStorage.setItem('update-all-owner-marker','keep');},{p:bundle(previous),u:bundle(unused)});
+  assert.equal(fixture.requests.filter(r=>r.relative.startsWith('api/packs/files/')).length,0,'the shell does not download packages on startup');
+  await page.evaluate(async({p,u,renamed})=>{
+   await PlayroomPacks.install(PlayroomPacks.prepare(p),{activate:true});
+   const session=new TabletopSession(TabletopCore,p.manifest.id,{seed:17,mode:'pass',players:[{name:'A'},{name:'B'}]});
+   if(renamed){
+    for(const actor of [0,1])for(const type of ['auto','ready'])session.act(actor,TabletopCore.legalActions(session.current,actor).find(action=>action.type===type));
+    const actor=session.current.turn;
+    session.act(actor,TabletopCore.legalActions(session.current,actor)[0]);
+   }
+   await PlayroomAppBridge.saveLibrary.activateAsync(session,'update-all-pinned');
+   await PlayroomPacks.install(PlayroomPacks.prepare(u),{activate:false});
+   localStorage.setItem('update-all-owner-marker','keep');
+  },{p:bundle(previous),u:bundle(unused),renamed:id!==targetId});
   const before=await page.evaluate(()=>({version:PlayroomAppVersion,save:JSON.stringify(PlayroomAppBridge.saveLibrary.open('update-all-pinned').export())}));
   fixture.deployed=true;await page.evaluate(()=>PlayroomPWA.checkForUpdate());await page.waitForFunction(()=>!!PlayroomPWA.updateInfo);const target=await page.evaluate(()=>PlayroomPWA.updateInfo.version);assert.notEqual(target,before.version);
   await openBuiltUpdates(page);
   await page.locator('[data-command=update-all]').click();
   await page.waitForFunction(target=>PlayroomAppVersion===target,target);await page.waitForFunction(()=>globalThis.PlayroomAppBridge&&!localStorage.getItem('playroom.update-all.v1'),null,{timeout:45000});
   const after=await page.evaluate(()=>({version:PlayroomAppVersion,packs:PlayroomPacks.list().map(p=>({id:p.id,version:p.version,active:p.active})),save:JSON.stringify(PlayroomAppBridge.saveLibrary.open('update-all-pinned').export()),marker:localStorage.getItem('update-all-owner-marker')}));
-  const newest=JSON.parse(fs.readFileSync(path.join(catalog,'catalog'),'utf8')).packs.find(p=>p.id==='uno').version;
-  assert.equal(after.version,target);assert.equal(after.save,before.save);assert.equal(after.marker,'keep');assert(after.packs.some(p=>p.version===newest&&p.active),JSON.stringify(after.packs));assert(after.packs.some(p=>p.version===previous));assert(!after.packs.some(p=>p.version===unused));assert(after.packs.every(p=>p.id==='uno'),'update all does not install new games');
-  await context.setOffline(true);await page.reload();await page.waitForFunction(()=>globalThis.PlayroomAppBridge&&globalThis.PlayroomPacks?.list().some(p=>p.id==='uno'));
-  assert.equal(await page.evaluate(()=>JSON.stringify(PlayroomAppBridge.saveLibrary.open('update-all-pinned').export())),before.save);assert.deepEqual(errors,[]);assert.equal(network.nativeSupabaseRequests,0);
-  if(process.env.PLAYROOM_UPDATE_ALL_REPORT)fs.writeFileSync(process.env.PLAYROOM_UPDATE_ALL_REPORT,JSON.stringify({beforeVersion:before.version,target,pinned:previous,removed:unused,active:newest,offline:true,saveUnchanged:true,unrequestedGames:0,errors},null,2)+'\n');
+  const update=JSON.parse(fs.readFileSync(path.join(catalog,'catalog'),'utf8')).packs.find(p=>p.id===targetId);
+  assert.equal(after.version,target);assert.equal(after.save,before.save);assert.equal(after.marker,'keep');
+  assert(after.packs.some(p=>p.id===targetId&&p.version===update.version&&p.active),JSON.stringify(after.packs));
+  assert(after.packs.some(p=>p.id===id&&p.version===previous));assert(!after.packs.some(p=>p.id===id&&p.version===unused));
+  assert(after.packs.every(p=>p.id===id||p.id===targetId),'update all does not install unrelated games');
+  assert.deepEqual(fixture.requests.filter(r=>r.relative.startsWith('api/packs/files/')).map(r=>'/'+r.relative),[update.url]);
+  if(id!==targetId)await page.locator('.post-update-modal [data-post-update-done]').click();
+  await context.setOffline(true);await page.reload();await page.waitForFunction(id=>globalThis.PlayroomAppBridge&&globalThis.PlayroomPacks?.list().some(p=>p.id===id),targetId);
+  assert.equal(await page.evaluate(()=>JSON.stringify(PlayroomAppBridge.saveLibrary.open('update-all-pinned').export())),before.save);
+  if(id!==targetId){
+   // The new tile and the archived match must both have usable entry points offline.
+   await page.locator('[data-start='+targetId+']').waitFor();
+   const {activeSurface,resumeSaved}=require('./browser-origin.cjs');
+   await page.locator('[data-hub-page=sessions]').click();
+   await page.locator('.saved-game[data-session-id=update-all-pinned]').click();
+   await activeSurface(page).locator('[data-history-id=update-all-pinned]').click();
+   const history=page.locator('#replay-range');
+   await history.waitFor();
+   assert(Number(await history.getAttribute('max'))>0);
+   await page.locator('.game-frame-tools [data-command=history-close]').click();
+   await resumeSaved(page,'update-all-pinned');
+   await page.locator('[data-sdk-player-scene]').waitFor();
+   assert.equal(await page.evaluate(()=>JSON.stringify(PlayroomAppBridge.saveLibrary.current()?.session.export())),before.save);
+  }
+  assert.deepEqual(errors,[]);assert.equal(network.nativeSupabaseRequests,0);
+  if(process.env.PLAYROOM_UPDATE_ALL_REPORT)fs.writeFileSync(process.env.PLAYROOM_UPDATE_ALL_REPORT,JSON.stringify({beforeVersion:before.version,target,oldPackId:id,newPackId:targetId,pinned:previous,removed:unused,active:update.version,packSha256:update.sha256,offline:true,saveUnchanged:true,unrequestedGames:0,errors},null,2)+'\n');
  }finally{await browser.close();await new Promise(resolve=>fixture.server.close(resolve));}
 });
 

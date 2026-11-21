@@ -1,12 +1,18 @@
 'use strict';
-const {test}=require('node:test'),assert=require('node:assert/strict');
+const {test,before,after}=require('node:test'),assert=require('node:assert/strict');
 const E=require('../core/engine.js'),Session=require('../core/session.js'),Authority=require('../core/authority.js'),P=require('../core/protocol.js'),Push=require('../application/game-push-events.js'),Access=require('../application/session-access.js');
-require('../packs/uno/rules.js');
+let installed;
+before(async()=>{installed=await require('./sdk-installed.cjs').bootstrap({ids:['uno']});});
+after(()=>installed?.close());
 const tick=()=>new Promise(resolve=>setImmediate(resolve));
 const room=()=>({id:'test-room',ownerId:'p0',phase:'playing',transportMode:'online',participants:[0,1].map(i=>({id:'p'+i,role:'player',bot:false})),seats:[0,1].map(i=>({index:i,participantId:'p'+i}))});
 test('host activity equals authorized blocking actions without building projections',async()=>{
- const s=new Session(E,'uno',{seed:17,players:[{name:'A'},{name:'B'}]}),a=new Authority(s);let notices=0;
+ const s=new Session(E,'uno',{seed:17,unoMode:'manual',players:[{name:'A'},{name:'B'}]}),a=new Authority(s);let notices=0;
  try{
+  const actor=s.current.turn,choices=E.legalActions(s.current,actor);
+  const controls=E.reactionControls(s.current,actor,choices);
+  assert.deepEqual(controls,choices.map(choice=>E.reactionControl(s.current,actor,choice)));
+  assert(controls.some(control=>control?.kind==='answer')&&controls.some(control=>control===null));
   const expected=[0,1].filter(i=>{const b=a.connect(i);try{const f=b.snapshot();return f.actions.some(action=>!f.independentActions.includes(action));}finally{b.close();}});
   const original=a._snapshot;a._snapshot=()=>{throw Error('activity must not build scenes');};assert.deepEqual(a.activity().targets,expected);
   const seen=[],p=new Push({authority:a,room:room,access:Access,send:async value=>{seen.push(value);}});await p.queue;assert.equal(seen.length,1);assert.deepEqual(seen[0].targets,expected.map(i=>'p'+i));assert(!JSON.stringify(seen).includes('hand'));

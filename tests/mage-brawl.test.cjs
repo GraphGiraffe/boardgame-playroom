@@ -429,7 +429,12 @@ test('fire ultimate: protected impact still bursts, adjacent shields face the ex
   assert.deepEqual(stages.slice(0,2).map(f=>f.state.players[3].health),[3,3],'damage follows both flights');
   assert.equal(stages[2].state.players[3].health,2);assert.equal(stages[2].effects.length,0);
   const groups=p.groups.filter(g=>stages.includes(p.scenes[g.scene]));
-  assert(groups.slice(0,2).every(g=>g.cues.every(c=>c.kind==='attack')));assert(groups[2].cues.some(c=>c.kind==='damage'));
+  for(const group of groups.slice(0,2)){
+   assert(group.cues.filter(cue=>cue.kind!=='sound').every(cue=>cue.kind==='attack'));
+   assert.deepEqual(group.cues.filter(cue=>cue.kind==='sound').map(cue=>cue.sounds),[['mage.fire']]);
+  }
+  assert(groups[2].cues.some(cue=>cue.kind==='damage'));
+  assert(!groups[2].cues.some(cue=>cue.kind==='sound'));
  }
 });
 test('fire ultimate: wall bursts once, misses never burst, tile vulnerability still applies',()=>{

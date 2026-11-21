@@ -4,11 +4,13 @@ const {chromium,executablePath}=require('../scripts/codex/browser.cjs');
 const {openGame,openSettings,activeSurface}=require('./browser-origin.cjs');
 const {installFetch}=require('./account-sync-fixture.cjs');
 const root=path.resolve(__dirname,'..'),hasUno=fs.existsSync(path.join(root,'packs/uno/manifest.json'))&&fs.existsSync(path.join(root,'installed-packs.js'));
-function server(){
+const standalone=process.env.PLAYROOM_SDK_PLAYER_HTML;
+function server(main){
   const types={'.html':'text/html','.js':'text/javascript','.css':'text/css','.json':'application/json','.svg':'image/svg+xml'};
   const s=http.createServer((req,res)=>{
-    const u=new URL(req.url,'http://localhost'),rel=u.pathname==='/'?'index.html':u.pathname.slice(1),file=path.resolve(root,rel);
-    if(!file.startsWith(root+path.sep)||!fs.existsSync(file)||fs.statSync(file).isDirectory()){res.writeHead(404);return res.end();}
+    const u=new URL(req.url,'http://localhost'),rel=u.pathname==='/'?'index.html':u.pathname.slice(1),entry=u.pathname==='/'&&main;
+    const file=entry?path.resolve(entry):path.resolve(root,rel);
+    if((!entry&&!file.startsWith(root+path.sep))||!fs.existsSync(file)||fs.statSync(file).isDirectory()){res.writeHead(404);return res.end();}
     res.writeHead(200,{'Content-Type':types[path.extname(file)]||'application/octet-stream','Cache-Control':'no-store'});
     res.end(fs.readFileSync(file));
   });
@@ -114,14 +116,29 @@ async function pair(host,client,{offerButton=false,photo=false}={}){
   }
   await host.locator('#net-host-answer').waitFor({state:'detached',timeout:15000});
 }
-for(const game of ['uno','battleship'])test(game+': guest reload + fresh QR reconnect preserves authority viewer, room seat and rotated secret', {timeout:90000,skip:!hasUno},async()=>{
-  const hosted=await server(),{server:listener,url}=hosted;
+for(const game of ['uno','battleship'])test(game+': guest reload + fresh QR reconnect preserves authority viewer, room seat and rotated secret', {timeout:90000,skip:!hasUno&&!(game==='uno'&&standalone)},async()=>{
+  const artifact=game==='uno'&&standalone;
+  const hosted=await server(artifact),{server:listener,url}=hosted;
   const browser=await chromium.launch({headless:true,executablePath:executablePath(),args:['--no-sandbox','--disable-background-networking']});
   const hc=await browser.newContext({playroomProfile:false,viewport:{width:1000,height:780}}),cc=await browser.newContext({playroomProfile:false,viewport:{width:390,height:740},hasTouch:true,isMobile:true});
   const host=await hc.newPage(),client=await cc.newPage();host._url=url;client._url=url;
   const errors=[];host.on('pageerror',e=>errors.push('host: '+e.message));client.on('pageerror',e=>errors.push('client: '+e.message));
   try{
     await profile(host,'Хост');await profile(client,'Гость');
+    if(artifact)for(const page of [host,client])await page.evaluate(()=>{
+      const manager=PlayroomAppBridge.packs,exportView=manager.exportView;
+      window.packViewExports=[];
+      manager.exportView=function(id,version){
+        if(id==='uno')packViewExports.push(version);
+        return exportView.call(this,id,version);
+      };
+      const register=TabletopAudio.prototype.registerPack;
+      window.packSoundRegistrations=0;
+      TabletopAudio.prototype.registerPack=function(id,sounds){
+        if(id==='uno')packSoundRegistrations++;
+        return register.call(this,id,sounds);
+      };
+    });
     await nearbyGame(host,game);await host.evaluate(()=>{const b=PlayroomAppBridge,r=b.room();b.roomService.setLocalSeat(r.id,r.ownerId,'seat-2',{kind:'empty',nickname:'Игрок'});b.renderLobby();});
     await activeSurface(host).locator('[data-room-context]').click();
     await host.locator('[data-room-title]').fill('Возвратный стол');
@@ -130,9 +147,27 @@ for(const game of ['uno','battleship'])test(game+': guest reload + fresh QR reco
     await host.locator('#network-pair-button').click();
     await pair(host,client);
     await client.locator('#net-client-join').waitFor();
+    if(artifact)await client.evaluate(()=>{
+      const decode=Image.prototype.decode;
+      window.warmedPackImages=[];
+      Image.prototype.decode=function(){
+        const url=this.src;
+        return decode.call(this).then(()=>{if(url.startsWith('blob:'))window.warmedPackImages.push(url);});
+      };
+      const audioDecode=AudioContext.prototype.decodeAudioData;
+      window.warmedPackSamples=0;
+      AudioContext.prototype.decodeAudioData=function(...args){
+        const pending=audioDecode.apply(this,args);
+        void pending.then(()=>window.warmedPackSamples++,()=>{});
+        return pending;
+      };
+    });
     await client.locator('#net-client-join').evaluate(f=>f.requestSubmit());
     await client.locator('.lobby-shell').waitFor();
+    const warmedBack=artifact?await (await client.waitForFunction(()=>window.warmedPackImages[0],null,{timeout:6000})).jsonValue():null;
     await client.locator('[data-net-seat]:not([disabled])').first().click();
+    if(artifact)await client.waitForFunction(()=>window.warmedPackSamples===1,null,{timeout:6000});
+    const lobbySoundRegistrations=artifact?await Promise.all([host,client].map(page=>page.evaluate(()=>packSoundRegistrations))):null;
     const before=await client.evaluate(()=>{
       const room=PlayroomNetworkDebug().client.room;
       const participantId=PlayroomNetworkDebug().client.participantId;
@@ -148,6 +183,11 @@ for(const game of ['uno','battleship'])test(game+': guest reload + fresh QR reco
     await host.locator('[data-command=lobby-start]:not([disabled])').click();
     await host.locator('.table-shell.network-game').waitFor({timeout:12000});
     await client.locator('.table-shell.network-game').waitFor({timeout:12000});
+    if(artifact)assert.deepEqual(await Promise.all([host,client].map(page=>page.evaluate(()=>packViewExports))),[[],[]],
+      'host and guest mount the exact installed pack without materializing its export');
+    if(artifact)assert.deepEqual(await Promise.all([host,client].map(page=>page.evaluate(()=>packSoundRegistrations))),lobbySoundRegistrations,
+      'host and guest keep the lobby sound definitions and their warmup when the field mounts');
+    if(warmedBack)assert(await client.evaluate(url=>fetch(url).then(response=>response.ok,()=>false),warmedBack),'the guest field keeps the object URL decoded in the lobby');
     assert.equal(await client.locator('.table-shell.network-game').getAttribute('data-viewer'),'1');
     await client.waitForFunction(()=>PlayroomNetworkDebug().client.recovery?.state==='connected');
     assert.equal(await client.locator('.network-reconnect-banner,.network-presence').count(),0,'connection status is shown on player cards without text on the game field');
@@ -195,6 +235,19 @@ for(const game of ['uno','battleship'])test(game+': guest reload + fresh QR reco
     assert.equal(hostRoom.participants.filter(p=>p.id===before.participantId).length,1);
     assert.equal(hostRoom.seats[1].participantId,before.participantId);
     assert.equal(hostRoom.participants.find(p=>p.id===before.participantId).connected,true);
+    if(artifact){
+      const sessionId=await host.evaluate(()=>PlayroomNetworkLibrary.playerControlContext().snapshot.sessionId);
+      const guestKey=await client.evaluate(({room,participant,session})=>
+        'client:'+PlayroomNetworkClientHistory.id(room,participant,session),{room:hostRoom.id,participant:after.participantId,session:sessionId});
+      for(const [page,key,viewer] of [[host,sessionId,'0'],[client,guestKey,'1']]){
+        await page.evaluate(()=>{PlayroomNetworkLibrary.exitToMenu();PlayroomAppBridge.showSessions();});
+        await page.locator(`[data-network-session-id="${key}"]`).click();
+        await activeSurface(page).locator('[data-network-history]').click();
+        await page.locator('.history-panel[aria-busy=false]').waitFor();
+        assert.equal(await page.locator('.network-game').getAttribute('data-viewer'),viewer);
+        assert.equal(await page.locator('.network-game').getAttribute('data-mode'),'history');
+      }
+    }
     assert.deepEqual(errors,[]);
   }finally{await Promise.all([hc.close(),cc.close()]);await browser.close();await new Promise(done=>listener.close(done));}
 });

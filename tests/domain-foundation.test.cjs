@@ -177,12 +177,14 @@ test('tutorial controllers own isolated progress and expose no mutable token sta
 });
 
 test('pack tutorials remain separate pure projection consumers and never load in domain entrypoints',()=>{
+ const {loadProject}=require('../sdk/project.cjs');
  for(const id of fs.readdirSync(path.join(root,'packs'))){
   const dir=path.join(root,'packs',id),manifestPath=path.join(dir,'manifest.json');if(!fs.existsSync(manifestPath))continue;
-  const manifest=JSON.parse(fs.readFileSync(manifestPath,'utf8'));if(!manifest.sourceModules)continue;
-  const tutorial='presentation/tutorial.js';assert(manifest.sourceModules.view.includes(tutorial),id);
-  assert(!manifest.sourceModules.rules.includes(tutorial),id);
-  const code=fs.readFileSync(path.join(dir,tutorial),'utf8');
+  const {presentation,support,rules}=loadProject(dir,{shared:path.join(companion,'shared')});
+  const isTutorial=module=>module.file==='presentation/tutorial.js';
+  const tutorial=[...presentation,...support].find(isTutorial);assert(tutorial,id);
+  assert(!rules.some(isTutorial),id);
+  const code=tutorial.source;
   assert.doesNotMatch(code,/\b(?:document|localStorage|setTimeout|fetch|WebSocket|SessionAuthority|TabletopCore)\b/,id);
   const context=vm.createContext({});vm.runInContext(code,context);assert.equal(typeof context.PlayroomPackTutorial({format:m=>m.key}),'function',id);
   assert.equal(fs.existsSync(path.join(dir,'view.js')),false,id+' uses the shared isolated renderer');
@@ -210,6 +212,10 @@ test('user learning persists across sessions, stops tracking when disabled, and 
  store.setEnabled('fixture',false);assert.equal(c.update(ctx,definition(1)),null);c.committed(ctx.owner,0,{type:'draw'},token);assert(!store.read('fixture').mastered.new);
  store.setEnabled('fixture',true);result=c.update(ctx,definition(1));assert(result.progress.seen.has('move'),'resume preserves mastered actions');result=c.update(ctx,definition(2));assert(!result.progress.seen.has('move'),'changed action needs learning again');assert(!result.progress.seen.has('new'));
  token=c.capture(ctx.owner,0);c.committed(ctx.owner,0,{type:'move'},token);assert.equal(store.read('fixture').mastered.move,2);
+ const projected=[];
+ const lesson=({guideProgress})=>{projected.push(guideProgress.seen);return definition(2);};
+ c.update(ctx,lesson);assert.deepEqual(projected.splice(0),[['move']]);
+ c.update(context(),lesson);assert.deepEqual(projected.splice(0),[[],['move']]);
  const restored=new Store(()=>storage,()=>user);assert.equal(restored.read('fixture').mastered.move,2);assert.deepEqual(restored.read('another').mastered,{});
  user='bob';assert.deepEqual(store.read('fixture').mastered,{});user='alice';c.restart('fixture');assert.deepEqual(store.read('fixture').mastered,{});assert(store.read('fixture').enabled);
 });

@@ -16,7 +16,7 @@ const definition={...base,id:'table-access-test',
  project:(state,viewer)=>({die:state.data.die,hands:state.data.hands.map((hand,owner)=>owner===viewer?hand:hand.map(()=>({hidden:true})))})};
 E.register(globalThis.PlayroomModelRegistration.adapt(E,{definition,
  presentation:{...presentation,scene:projection=>({contractVersion:1,id:'test-table',family:'board',players:projection.data.hands.map((hand,player)=>({player,hand,metrics:[]})),geometry:{topology:'fixed'},zones:[{id:'field',kind:'board'}],objects:[],interactions:projection.actions.map(command=>({command,target:{zone:'field'}})),die:projection.data.die}),action:()=>({key:'tictactoe.board.label',params:{}})},
- locales:{ru:require('../packs/tictactoe/locales/ru/game.json')},version:'0.1.0'}));
+ locales:{ru:require('../packs/tictactoe/lang/ru.json')},version:'0.1.0'}));
 function session(){return new Session(E,definition.id,{seed:'PRIVATE-SEED',firstPlayerMode:'assigned',firstPlayer:0,players:[{name:'A'},{name:'B'}]});}
 const request=(connection,action={type:'roll'},id='roll-1')=>P.command(connection.snapshot(),action,id);
 function publicOnly(snapshot){

@@ -14,6 +14,10 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       if(item.sdkFeatures!==undefined&&(!Array.isArray(item.sdkFeatures)||item.sdkFeatures.length>16||new Set(item.sdkFeatures).size!==item.sdkFeatures.length||item.sdkFeatures.some(f=>typeof f!=='string'||!ID.test(f))))throw Error('Invalid pack SDK requirements');
       if(item.releases!==undefined&&(!Array.isArray(item.releases)||item.releases.length>128||item.releases.some(release=>!release||!SEMVER.test(release.version)||!Array.isArray(release.changes)||release.changes.length>128||release.changes.some(line=>typeof line!=='string'||line.length>4000))))throw Error('Invalid pack release notes');
       if(['name','tagline'].some(key=>item[key]!==undefined&&(typeof item[key]!=='string'||item[key].length>2048))||item.byteSize!==undefined&&(!Number.isSafeInteger(item.byteSize)||item.byteSize<1||item.byteSize>4*1024*1024))throw Error('Invalid pack catalog metadata');
+      if(item.replaces!==undefined){
+        if(!Array.isArray(item.replaces)||item.replaces.length>16)throw Error('Invalid replaced pack IDs');
+        for(const id of item.replaces){if(typeof id!=='string'||!ID.test(id)||seen.has(id))throw Error('Invalid replaced pack ID');seen.add(id);}
+      }
       if(seen.has(item.id))throw Error(globalThis.PlayroomMessages.text("ui.remote-catalog.dd2d739e7aa6"));seen.add(item.id);
     }
     return input;
@@ -47,6 +51,14 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       const installed=this.manager.list(),compare=this.manager.constructor?.compareVersions||compareVersions;
       return (this.current?.packs||[]).filter(item=>installed.filter(row=>row.id===item.id).every(row=>compare(item.version,row.version)>0));
     }
+    targets(ids,packs){
+      // Catalog ownership of replacement IDs keeps the hint and the restart job in sync.
+      const installed=new Set(ids);
+      return packs.filter(item=>installed.has(item.id)||item.replaces?.some(id=>installed.has(id)));
+    }
+    updates(ids=this.manager.list().map(pack=>pack.id)){
+      return this.targets(ids,this.pending());
+    }
     async prepare(id){
       this.requireAvailable();
       const item=this.pending().find(entry=>entry.id===id);
@@ -63,7 +75,8 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       const manifest=bundle.manifest;
       if(manifest.id!==item.id||manifest.version!==item.version||manifest.stateVersion!==item.stateVersion||manifest.engineApi!==item.engineApi||manifest.viewApi!==item.viewApi)throw Error(globalThis.PlayroomMessages.text("ui.remote-catalog.75fccc8516b6"));
       if(item.sdkFeatures!==undefined&&JSON.stringify([...item.sdkFeatures].sort())!==JSON.stringify([...(manifest.sdkFeatures||[])].sort()))throw Error(globalThis.PlayroomMessages.text('ui.remote-catalog.75fccc8516b6'));
-      return this.manager.prepare(bundle);
+      if(item.replaces&&JSON.stringify(item.replaces)!==JSON.stringify(manifest.replaces))throw Error('Pack replacement metadata mismatch');
+      return this.manager.prepareInstall?.(bundle)??this.manager.prepare(bundle);
     }
     async install(id,{activate=false}={}){return this.manager.install(await this.prepare(id),{activate});}
   }

@@ -5,14 +5,20 @@
   root.PlayroomPlanPlayer=api;
 })(globalThis,function(){
   'use strict';
-  function serializable(value,ancestors=new Set()){
+  function serializable(value,ancestors,checked){
     if(value===undefined||value===null||typeof value==='string'||typeof value==='boolean')return;
     if(typeof value==='number'&&Number.isFinite(value))return;
-    if(typeof value!=='object'||ancestors.has(value)||(!Array.isArray(value)&&Object.getPrototypeOf(value)!==Object.prototype&&Object.getPrototypeOf(value)!==null))throw Error('PRESENTATION_DATA_INVALID');
-    ancestors.add(value);for(const item of Object.values(value))serializable(item,ancestors);ancestors.delete(value);
+    if(typeof value!=='object'||ancestors.has(value))throw Error('PRESENTATION_DATA_INVALID');
+    if(checked.has(value))return;
+    if(!Array.isArray(value)&&Object.getPrototypeOf(value)!==Object.prototype&&Object.getPrototypeOf(value)!==null)throw Error('PRESENTATION_DATA_INVALID');
+    // Check shared scene branches once per plan, while still rejecting cycles.
+    ancestors.add(value);
+    for(const item of Object.values(value))serializable(item,ancestors,checked);
+    ancestors.delete(value);
+    checked.add(value);
   }
   function validate(plan){
-    serializable(plan);
+    serializable(plan,new Set(),new WeakSet());
     if(!plan||typeof plan.id!=='string'||!plan.id||!Array.isArray(plan.groups))throw Error('PRESENTATION_PLAN_INVALID');
     if(plan.scenes!==undefined){
       if(!Array.isArray(plan.scenes)||![plan.initial,plan.final].every(index=>Number.isInteger(index)&&index>=0&&index<plan.scenes.length))throw Error('PRESENTATION_SCENE_INVALID');
@@ -40,12 +46,17 @@
     const context={
       current:()=>player.current(run),
       signal:abort.signal,
+      track(handle){
+        if(!player.current(run)){handle.cancel();return;}
+        handles.add(handle);handle.rate(player.rate);if(run.paused)handle.pause();
+        return ()=>handles.delete(handle);
+      },
       animation(animation){
         if(!player.current(run)){animation.cancel();return animation;}
         if(animations.has(animation))return animation;animations.add(animation);
         const handle={pause:()=>animation.pause(),resume:()=>animation.play(),rate:value=>{animation.playbackRate=value;},cancel:()=>animation.cancel()};
-        handles.add(handle);handle.rate(player.rate);if(run.paused)handle.pause();
-        animation.finished.then(()=>handles.delete(handle),()=>handles.delete(handle));
+        const detach=context.track(handle);
+        animation.finished.then(detach,detach);
         return animation;
       },
       cleanup(effect){
@@ -76,29 +87,52 @@
       if(this.run?.plan.id===plan.id&&!this.run.cancelled){if(!this.run.done)this.run.ports=ports;return this.run.promise;}
       this.cancel();
       let resolve;
-      const run={plan,ports,index:-1,paused:false,done:false,timer:null,remaining:0,started:0,waiting:false,effectsDone:false,resolve:null,promise:new Promise(r=>resolve=r)};
+      const run={plan,ports,index:-1,paused:false,done:false,timer:null,remaining:0,started:0,waiting:false,effectsDone:true,preparing:true,advancing:false,resolve:null,promise:new Promise(r=>resolve=r)};
       run.resolve=resolve;this.run=run;run.context=effectContext(this,run);
-      try{ports.initial?.(plan.initial);this.advance(run);}catch(error){this.fail(run,error);}
+      try{ports.initial?.(plan.initial);run.preparing=false;this.next(run);}catch(error){this.fail(run,error);}
       return run.promise;
     }
     current(run){return this.run===run&&!run.done;}
     advance(run){
-      if(!this.current(run)||run.paused)return;
-      if(++run.index===run.plan.groups.length){this.finish(run,'complete');return;}
-      const group=run.plan.groups[run.index];run.effectsDone=false;run.waiting=true;run.remaining=group.duration;
+      if(run.advancing)return;
+      run.advancing=true;
       try{
-        const ready=run.ports.group?.(run.index,group,run.context);
-        const start=()=>{
-        if(!this.current(run))return;
-        const effects=group.cues.map(cue=>cue.kind==='delay'?new Promise(resolve=>{run.context.schedule(resolve,cue.duration);}):run.ports.effect?.(cue,run.context));
-        const pending=effects.filter(effect=>effect&&typeof effect.then==='function');
-        run.effectsDone=pending.length===0;
-        this.arm(run);
-        if(pending.length)Promise.all(pending).then(()=>{if(this.current(run)){run.effectsDone=true;this.next(run);}},error=>this.fail(run,error));
-        };
-        if(ready&&typeof ready.then==='function'){run.preparing=true;Promise.resolve(ready).then(()=>{run.preparing=false;if(!this.current(run))return;if(run.paused)run.prepared=start;else start();}).catch(error=>this.fail(run,error));}
-        else start();
+        // Immediate groups advance on this stack frame. Only a real wait or
+        // pause hands control back to the clock or the effect completion port.
+        while(this.current(run)&&!run.paused&&!run.preparing&&!run.waiting&&run.effectsDone){
+          if(++run.index===run.plan.groups.length){this.finish(run,'complete');break;}
+          this.mountGroup(run,run.plan.groups[run.index]);
+        }
       }catch(error){this.fail(run,error);}
+      finally{run.advancing=false;}
+    }
+    mountGroup(run,group){
+      run.preparing=true;run.effectsDone=false;run.waiting=true;run.remaining=group.duration;
+      const pending=[];
+      const join=effect=>{if(effect&&typeof effect.then==='function')pending.push(effect);};
+      const start=()=>{
+        try{
+          for(const cue of group.cues){
+            if(!this.current(run))break;
+            join(cue.kind==='delay'?new Promise(resolve=>{run.context.schedule(resolve,cue.duration);}):run.ports.effect?.(cue,run.context));
+          }
+          run.preparing=false;run.effectsDone=pending.length===0;
+          this.arm(run);
+        }catch(error){this.fail(run,error);}
+        finally{
+          if(pending.length)Promise.all(pending).then(()=>{if(this.current(run)){run.effectsDone=true;this.next(run);}},error=>this.fail(run,error));
+        }
+      };
+      const mounted=()=>{
+        if(!this.current(run))return;
+        if(run.paused)run.prepared=start;
+        else start();
+      };
+      // A mount can contribute animations and request a pause. Both sync and
+      // async mounts use the same gate before any cue starts.
+      const ready=run.ports.group?.(run.index,group,run.context,join);
+      if(ready&&typeof ready.then==='function')Promise.resolve(ready).then(mounted).catch(error=>this.fail(run,error));
+      else mounted();
     }
     arm(run){
       if(!this.current(run)||run.paused||run.preparing||!run.waiting)return;
@@ -106,7 +140,7 @@
       run.started=this.scheduler.now();
       run.timer=this.scheduler.schedule(()=>{run.timer=null;run.remaining=0;run.waiting=false;this.next(run);},Math.ceil(run.remaining/this.rate));
     }
-    next(run){if(this.current(run)&&!run.paused&&!run.waiting&&run.effectsDone)this.advance(run);}
+    next(run){if(this.current(run)&&!run.paused&&!run.preparing&&!run.waiting&&run.effectsDone)this.advance(run);}
     stopTimer(run){
       if(run.timer===null)return;
       this.scheduler.unschedule(run.timer);run.timer=null;

@@ -22,27 +22,40 @@
       event(value.publicEvent, playerCount);
     }
   }
-  // Weak keys retain no retired journal. Only module-owned deep snapshots are
-  // reused; mutable external facts are detached on every call.
+  const validatedCounts=new WeakMap();
+  function validate(value,playerCount){
+    const reviewed=validatedCounts.get(value);
+    if(reviewed!==undefined&&reviewed===playerCount)return;
+    event(value,playerCount);
+  }
+  // The same permitted fact can serve several viewers. Cache the two visibility
+  // outcomes independently and only reuse facts from owned snapshots.
   const projections = new WeakMap();
+  function authorizedFact(value, audience, playerCount) {
+    const owned=snapshot(value);
+    let counts=projections.get(owned),cached=counts?.get(playerCount);
+    if(!cached){
+      validate(owned, playerCount);
+      if(!counts){counts=new Map();projections.set(owned,counts);}
+      cached={};counts.set(playerCount,cached);
+    }
+    const visible=owned.visibility.kind==='public'||audience>=0&&owned.visibility.players.includes(audience);
+    const key=visible?'full':'fallback';
+    if(!Object.hasOwn(cached,key)){
+      const allowed=visible?owned:owned.publicEvent;
+      cached[key]=allowed?Values.composeRecord({type:allowed.type,actor:allowed.actor,params:allowed.params,
+        ...(owned.id!==undefined?{id:owned.id,revision:owned.revision}:{})},{strict:true}):null;
+    }
+    return cached[key];
+  }
   // Visibility is resolved before presentation receives parameters or message refs.
+  const audienceOf=(viewer,playerCount)=>integer(viewer,0,playerCount-1)?viewer:-1;
+  function projectFact(value,viewer,playerCount){return authorizedFact(value,audienceOf(viewer,playerCount),playerCount);}
   function projectEvents(events, viewer, playerCount) {
     check(Array.isArray(events), 'EVENT_INVALID');
-    const audience = integer(viewer, 0, playerCount - 1) ? viewer : -1;
-    return Object.freeze(events.flatMap(value => {
-      const owned = snapshot(value), key = playerCount + ':' + audience;
-      let cached = projections.get(owned);
-      if (cached?.has(key)) return cached.get(key);
-      event(owned, playerCount);
-      const visible = owned.visibility.kind === 'public' ||
-        audience >= 0 && owned.visibility.players.includes(audience);
-      const allowed = visible ? owned : owned.publicEvent;
-      const result = snapshot(allowed ? [{type:allowed.type, actor:allowed.actor, params:allowed.params,
-        ...(owned.id!==undefined?{id:owned.id,revision:owned.revision}:{})}] : []);
-      if (!cached) { cached = new Map(); projections.set(owned, cached); }
-      cached.set(key, result);
-      return result;
-    }));
+    const audience=audienceOf(viewer,playerCount),result=[];
+    for(const value of events){const fact=authorizedFact(value,audience,playerCount);if(fact)result.push(fact);}
+    return Object.freeze(result);
   }
 
   function append(events, drafts, playerCount, revision) {
@@ -51,12 +64,17 @@
     check(integer(id,0,Number.MAX_SAFE_INTEGER-drafts.length),'EVENT_INVALID');
     check(events.at(-1)?.revision===undefined||events.at(-1).revision<=revision,'EVENT_REVISION_INVALID');
     const added=drafts.map(value=>{
-      event(value,playerCount);
+      check(record(value),'EVENT_INVALID');
       check(value.id===undefined&&value.revision===undefined,'EVENT_ID_RESERVED');
-      return snapshot({...value,id:++id,revision});
+      const owned=snapshot({...value,id:++id,revision});
+      // Check the owned bytes before remembering their validation. Imported
+      // facts and lookalike frozen shells still cross the full validator.
+      event(owned,playerCount);
+      validatedCounts.set(owned,playerCount);
+      return owned;
     });
     return Object.freeze([...events,...added]);
   }
 
-  return Object.freeze({validate:event,project:projectEvents,append});
+  return Object.freeze({validate,project:projectEvents,projectFact,append});
 });

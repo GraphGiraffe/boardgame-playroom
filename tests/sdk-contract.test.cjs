@@ -1,14 +1,38 @@
 'use strict';
 const {test}=require('node:test'),assert=require('node:assert/strict');
 const fs=require('node:fs'),path=require('node:path');
+const {spawnSync}=require('node:child_process');
 const {verify}=require('../sdk/verify.cjs');
 const {validateAsset}=require('../sdk/assets.cjs');
 const {StudioSession}=require('../sdk/runtime.cjs');
 const {fixture}=require('./sdk-fixture.cjs');
 const packs=path.resolve(__dirname,'../../playroom-paks');
-test('SDK pilot contracts run deterministic games with viewer-specific scenes and checkpoint restore',async()=>{
- for(const id of ['tictactoe','gofish','yatzy']){const result=await verify(path.join(packs,'packs',id),{shared:path.join(packs,'shared'),steps:12,seeds:[1,17]});assert.equal(result.status,'passed');assert(result.transitions>0);}
+test('SDK doctor audits without evaluating authored code and editor diagnostics preserve positions',t=>{
+ const project=fixture(t),file=path.join(project,'domain/game.js');
+ const source=fs.readFileSync(file,'utf8');
+ fs.writeFileSync(file,'throw Error("Guest code must not run during doctor");\n'+source);
+ const cli=(...args)=>spawnSync(process.execPath,[path.resolve(__dirname,'../sdk/cli.cjs'),...args],{encoding:'utf8',timeout:15000});
+ const healthy=cli('doctor',project);assert.equal(healthy.status,0,healthy.stdout);
+ const decoded=JSON.parse(healthy.stdout);assert.equal(decoded.status,'ready');assert.equal(decoded.project.status,'passed');
+ fs.writeFileSync(file,'fetch("example");\n'+source);
+ const failed=cli('doctor',project);assert.equal(failed.status,1,failed.stdout);
+ const report=JSON.parse(failed.stdout);assert.equal(report.environment.status,'passed');assert.equal(report.project.diagnostics[0].code,'SDK_ACCESS_DENIED');
+ const editor=cli('check',project,'--format','vscode');assert.equal(editor.status,1,editor.stdout);
+ assert.match(editor.stdout,/^domain\/game\.js:1:1: error SDK_ACCESS_DENIED: fetch /m);
 });
+test('SDK pilot contracts run deterministic games with viewer-specific scenes and checkpoint restore',async()=>{
+ for(const id of ['tictactoe','gofish','dice-poker']){const result=await verify(path.join(packs,'packs',id),{shared:path.join(packs,'shared'),steps:12,seeds:[1,17]});assert.equal(result.status,'passed');assert(result.transitions>0);}
+});
+test('SDK event checkpoints share current-event ordering and inert scene validation',async()=>{
+ const {validateScene}=require('../sdk/runtime.cjs'),session=await StudioSession.open(path.join(packs,'packs/snakes'),{shared:path.join(packs,'shared')});
+ try{
+  await session.start({preset:'plus',rng:17});const checkpoint=await session.checkpoint();Object.assign(checkpoint.position.data,{phase:'move',positions:[22,25],dice:[3,4]});await session.restore(checkpoint);await session.apply(0,{type:'move',dieIndex:0,delta:0});const value=await session.view(0),frames=value.events.filter(event=>event.scene).map(event=>({eventId:event.id,scene:event.scene}));
+  assert.deepEqual(frames.map(frame=>frame.scene.positions.map(p=>p.cell)),[[25,22],[29,22]]);assert(frames.every(frame=>frame.scene.interactions.length===0));
+  for(const change of [frames=>{frames[0].eventId=999;},frames=>frames.push(frames[0]),frames=>frames.reverse(),frames=>{frames[0].scene.interactions=[{command:{type:'roll'},target:{zone:'field'}}];}]){const changed=JSON.parse(JSON.stringify(frames));change(changed);assert.throws(()=>validateScene({...value,eventScenes:changed},value.projection),error=>error.code==='SDK_EVENT_SCENES_INVALID');}
+  const unbound=JSON.parse(JSON.stringify(value));unbound.events[0].scene={private:'not a validated checkpoint'};const safe=validateScene(unbound,value.projection);assert(safe.events.every(event=>!event.scene),'event descriptions cannot bypass checkpoint validation');
+ }finally{session.close();}
+});
+
 test('SDK checks SVG and image content, external references and animation vocabulary',()=>{
  const svg=source=>Buffer.from(source);
  assert.equal(validateAsset(svg('<svg xmlns="http://www.w3.org/2000/svg"><path d="M0 0"/></svg>'),'a.svg').mime,'image/svg+xml');

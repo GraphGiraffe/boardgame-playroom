@@ -12,17 +12,25 @@ const bundleURL=globalThis.document?.currentScript?.src||globalThis.location?.hr
 let host,initializing;
 export function initialize(options=globalThis.PlayroomSandboxOptions||{}){
  if(initializing)return initializing;
- initializing=(async()=>{
+ const attempt=(async()=>{
   const wasmURL=options.wasmURL||new URL('quickjs.wasm',bundleURL).href;
   const wasmBinary=options.wasmBinary||await (async()=>{const response=await fetch(wasmURL);if(!response.ok)throw Error('SDK_WASM_LOAD');return response.arrayBuffer();})();
   const variant=newVariant(RELEASE_SYNC,{wasmLocation:wasmURL,locateFile:()=>wasmURL,wasmBinary,wasmMemory:new WebAssembly.Memory({initial:256,maximum:DEFAULT_LIMITS.memoryBytes/65536})});
-  const QuickJS=await newQuickJSWASMModuleFromVariant(variant);host=createVMHost({QuickJS,coreSources});return true;
- })();return initializing;
+  const QuickJS=await newQuickJSWASMModuleFromVariant(variant);
+  const values=globalThis.PlayroomModelValues;
+  host=createVMHost({QuickJS,coreSources,readPresentation:values?.parseSnapshot,ownsSnapshot:values?.ownsSnapshot});return true;
+ })();
+ initializing=attempt;
+ // A failed first download may be retried by the next pack operation.
+ void attempt.catch(()=>{if(initializing===attempt)initializing=null;});
+ return attempt;
 }
 function initialized(){if(!host)throw Object.assign(Error('SDK_NOT_READY'),{code:'SDK_NOT_READY'});return host;}
-export const ready=initialize();
-export const createRules=project=>initialized().createRules(project);
-export const render=(project,projection,context={})=>initialized().render(project,projection,context);
+// Opening the hub without packs does not fetch or instantiate the guest VM.
+export const ready=Object.freeze({then:(resolve,reject)=>initialize().then(resolve,reject)});
+export const createRules=(project,options)=>initialized().createRules(project,options);
+export const render=(project,projection,context)=>initialized().render(project,projection,context);
 export const metadata=project=>initialized().metadata(project);
+export const createEventPresenter=(project,factsOnly)=>initialized().createEventPresenter(project,factsOnly);
 
 export const present=(project,method,...args)=>initialized().present(project,method,...args);

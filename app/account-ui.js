@@ -6,10 +6,23 @@
  const activeHost=()=>document.getElementById('modal-root')?.querySelector(':scope>[data-surface-state=active]'),accountRoot=()=> (surface?surface.state==='disposed'?null:surface.element:activeHost())?.querySelector('.account-content')?.closest('.modal'),interactive=()=>!!accountRoot()&&(!surface||surface.state==='active');
  function status(){const s=service?.snapshot();return !s?.configured?'unavailable':root.navigator.onLine===false?'offline':s.busy?'busy':s.error?'error':s.kind==='account'?'account':s.kind==='guest'?'guest':'local';}
  const statusIcons={unavailable:'cloud-off',offline:'cloud-off',busy:'cloud-sync',error:'cloud-alert',account:'cloud-check',guest:'cloud',local:'cloud'};
- function accountEntryLabel(){return service?.snapshot().kind==='account'?'Облачный аккаунт':'Войти в облако';}
- function accountEntryContent(state,labelled){return H().icon(statusIcons[state])+(labelled?`<span data-account-entry-label>${H().esc(accountEntryLabel())}</span>`:'');}
- function markup({labelled=false}={}){const state=status(),label=text('title')+' · '+text('status.'+state);return labelled?`<button type="button" class="btn secondary" data-account-open data-account-labelled data-account-status="${state}" aria-label="${H().esc(accountEntryLabel()+' · '+text('status.'+state))}">${accountEntryContent(state,true)}</button>`:H().iconButton(`data-account-open data-account-status="${state}"`,label,statusIcons[state],{className:'account-status-button'});}
- function updateButtons(){for(const label of document.querySelectorAll('[data-profile-play-label]'))label.textContent=service?.snapshot().kind==='account'?'Играть':'Играть без облака';const state=status(),label=text('title')+' · '+text('status.'+state);for(const button of document.querySelectorAll('[data-account-open]')){const labelled=button.hasAttribute('data-account-labelled');button.dataset.accountStatus=state;button.setAttribute('aria-label',labelled?accountEntryLabel()+' · '+text('status.'+state):label);button.title=label;button.innerHTML=accountEntryContent(state,labelled);}}
+ function accountEntryLabel(){return service?.snapshot().kind==='account'?'Аккаунт':'Войти';}
+ function markup({labelled=false}={}){
+  const state=status(),statusLabel=text('status.'+state),entry=accountEntryLabel();
+  return labelled?`<button type="button" class="btn secondary" data-account-open data-account-labelled data-account-status="${state}" aria-label="${H().esc(entry+' · '+statusLabel)}">${H().icon('cloud')}<span data-account-entry-label>${H().esc(entry)}</span></button>`:H().iconButton(`data-account-open data-account-status="${state}"`,text('title')+' · '+statusLabel,statusIcons[state],{className:'account-status-button'});
+ }
+ function updateButtons(){
+  const state=status(),statusLabel=text('status.'+state),label=text('title')+' · '+statusLabel,entry=accountEntryLabel();
+  for(const button of document.querySelectorAll('[data-account-open]')){
+   const caption=button.querySelector('[data-account-entry-label]');
+   // The labelled welcome action keeps its icon and focus across Auth updates.
+   if(caption){if(caption.textContent!==entry)caption.textContent=entry;}
+   else if(button.dataset.accountStatus!==state)button.innerHTML=H().icon(statusIcons[state]);
+   button.dataset.accountStatus=state;
+   button.setAttribute('aria-label',caption?entry+' · '+statusLabel:label);
+   button.title=label;
+  }
+ }
  const authModes=['login','signup'],authLabels=['Войти','Регистрация'];
  function clearDrafts(){drafts=Object.create(null);emailDraft='';lastIdentity='';}
  function rememberForm(){

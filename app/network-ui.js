@@ -37,6 +37,52 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     current:(initial,transport)=>clientTransport===transport&&clientGameClient?.snapshot?.sessionId===initial.sessionId&&clientGameClient?.snapshot?.authorityEpoch===initial.authorityEpoch,
     boundary:value=>clientMount?.setHistoryBoundary(value),warning:error=>toast(globalThis.PlayroomMessages.text("ui.network-ui.3ce03f500e79",{p0:String(globalThis.PlayroomMessages.error(error))}))});
   let hostLockRelease=null,archiveMount=null,archiveAuthority=null,archiveKey=null;
+  let seriesLobby=null,lobbyCheckpoint=null;
+  function releaseSeriesLobby(){
+    seriesLobby?.release?.();
+    seriesLobby=null;
+  }
+  function releaseLobbyCheckpoint(){
+    lobbyCheckpoint?.stopWatching?.();
+    lobbyCheckpoint?.stopResume?.();
+    lobbyCheckpoint?.release?.();
+    lobbyCheckpoint=null;
+  }
+  function queueLobbyCheckpoint(checkpoint,phase){
+    checkpoint.phase=phase;
+    if(phase!=='lobby'||checkpoint.closing)return;
+    checkpoint.dirty=true;
+    if(checkpoint.writing)return;
+    // Room changes in the same turn share one private snapshot. Presence
+    // and readiness are reset by RoomService when restoring the lobby.
+    checkpoint.writing=Promise.resolve().then(async()=>{
+      const b=bridge();
+      while(checkpoint.dirty&&lobbyCheckpoint===checkpoint&&checkpoint.phase==='lobby'&&!checkpoint.closing){
+        checkpoint.dirty=false;
+        const recovery=b.roomService.exportRecovery(checkpoint.roomId,{lobby:true});
+        delete recovery.room.hostTransferPending;
+        const {id,version}=recovery.room.game,key=id+':'+version;
+        await hostSessionStore.saveLobbyHandoff(checkpoint.roomId,checkpoint.id,recovery,key===checkpoint.gameKey?undefined:b.packs.exportPack(id,version));
+        checkpoint.gameKey=key;
+        checkpoint.error=null;
+      }
+    }).catch(error=>{
+      checkpoint.error=error;
+      if(lobbyCheckpoint===checkpoint)toast(root.PlayroomMessages.error(error));
+    }).finally(()=>{
+      checkpoint.writing=null;
+      if(lobbyCheckpoint===checkpoint&&checkpoint.dirty&&!checkpoint.error)queueLobbyCheckpoint(checkpoint,checkpoint.phase);
+    });
+  }
+  async function waitForLobbyCheckpoint(checkpoint){
+    if(!checkpoint)return;
+    await checkpoint.writing;
+    if(checkpoint.error)throw checkpoint.error;
+  }
+  function hasLegacySeriesFence(saved){
+    const value=root.PlayroomData.getItem('playroom.lobby-fence.v1.'+saved.room.id);
+    return !!value&&JSON.parse(value).seriesSessionId===saved.sessionId;
+  }
   let hostRecovery=null,rosterQueue=Promise.resolve(),rosterError=null;
   let reconnectStatus='',clientRecovery=null,resumeIntent=null,clientAttachments=0;
   let pendingReady=null,readyFlight=false;
@@ -59,14 +105,19 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       networkInMenu=false;if(client.snapshot?.state?.status==='finished'){(isHost?exitHostGame:exitClientGame)({finished:true});return;}mountNetworkView(isHost);
     }catch(error){toast(globalThis.PlayroomMessages.text("ui.network-ui.c2f62a148302",{p0:String(globalThis.PlayroomMessages.error(error))}));}
   }
+  function roomClockAuthority(){
+    if(hostTransferBlocked||!hostAuthority||!hostRoomId)return null;
+    const b=bridge(),room=b.room();
+    return room?.id===hostRoomId&&room.ownerId===b.participantId()?hostAuthority:null;
+  }
   function mountNetworkView(isHost,{preserveModal=false}={}){
     if(networkInMenu)return;
     const client=isHost?hostGameClient:clientGameClient,snapshot=client?.snapshot;if(!snapshot)return;
     const b=bridge();b.packs.activate(snapshot.game,snapshot.packVersion);b.rememberGame(snapshot.game);
-    const definition=b.packs.exportView(snapshot.game,snapshot.packVersion);
+    const definition=b.packs.viewForMount(snapshot.game,snapshot.packVersion);
     if(!preserveModal)b.closeModal(true);document.getElementById('app').inert=preserveModal;
     const old=isHost?hostMount:clientMount;old?.destroy?.();
-    const mounted=Shared.mount(client,definition,{surface:snapshot.viewer<0?'table':'combined',tableAvailable:()=>{const room=isHost?b.room():clientPresence||clientRoom;return !!room?.participants?.some(person=>person.role==='table'&&person.connected===true);},connected:isHost||clientConnected(),onExit:isHost?exitHostGame:exitClientGame,onPresented:revision=>{if(!isHost)markClientPosition('presentedRevision',revision);},onReviewed:(revision,frame)=>{if(!isHost)markClientPosition('reviewedRevision',revision,frame);}});
+    const mounted=Shared.mount(client,definition,{hostClockActions:isHost?()=>roomClockAuthority()?.clockActions()??[]:undefined,surface:snapshot.viewer<0?'table':'combined',tableAvailable:()=>{const room=isHost?b.room():clientPresence||clientRoom;return !!room?.participants?.some(person=>person.role==='table'&&person.connected===true);},connected:isHost||clientConnected(),onExit:isHost?exitHostGame:exitClientGame,onPresented:revision=>{if(!isHost)markClientPosition('presentedRevision',revision);},onReviewed:(revision,frame)=>{if(!isHost)markClientPosition('reviewedRevision',revision,frame);}});
     if(isHost)hostMount=mounted;else clientMount=mounted;
     mounted.render();renderPresence();showDisconnectBanner();
   }
@@ -239,8 +290,8 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       realtime:async value=>{await admit?.();return switchable.realtime(value);},
       status:async()=>{await admit?.();return switchable.status();},
       snapshot:async options=>{await admit?.();return switchable.snapshot(options);},
-      history:async(index,options)=>{await admit?.();if(switchable.completedHistory){if(!Number.isSafeInteger(index)||!switchable.completedHistory[index])throw Error(globalThis.PlayroomMessages.text("ui.network-ui.b50111de0c3a"));return switchable.completedHistory[index];}return switchable.history(index,options);},
-      historyRange:async(start,count,options)=>{await admit?.();if(switchable.completedHistory)return root.PlayroomProtocol.historyRange(index=>switchable.completedHistory[index],start,count,switchable.completedHistory.length);return switchable.historyRange(start,count,options);},
+      history:async(index,options)=>{await admit?.();return switchable.history(index,options);},
+      historyRange:async(start,count,options)=>{await admit?.();return switchable.historyRange(start,count,options);},
       subscribe:(listener,options={})=>W.subscribeAuthorized(switchable,listener,admit,{wire:!!options.wire,isOpen:()=>peer.pc.connectionState!=='closed',deny:()=>peer.close()}),
       presentationReady:async message=>{if(hostTransferBlocked)return {ok:false};await admit?.();return switchable.presentationReady(message);},
       dispatch:async(command,options)=>{
@@ -250,13 +301,14 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
         if(command?.type==='room-leave'){
           const id=roomConnection.participantId,room=bridge().roomService.snapshot(roomId);if(!id||id===room.ownerId)throw Error('READ_ONLY');
           if(room.phase==='playing'&&participant(room,id)?.role==='player'){hostTransferCalls.delete(pending);if(hostGameClient?.snapshot.state.status==='finished')exitHostGame({finished:true});else await prepareRoster();}
-          bridge().roomService.kick(roomId,room.ownerId,id);return {ok:true};
+          bridge().roomService.kick(roomId,room.ownerId,id);await waitForLobbyCheckpoint(lobbyCheckpoint);return {ok:true};
         }
         if(command?.type==='player-control')return await playerControlCommand(roomId,roomConnection.participantId,command);
         if(['room-chat-read','room-chat-send','room-chat-seen','room-chat-summary','room-chat-react'].includes(command?.type))return chatCommand(roomId,roomConnection.participantId,command);
         if(command?.type==='quick-reaction')return relayReaction(roomId,roomConnection.participantId,command);
         if(['invitation-offer','invitation-answer'].includes(command?.type))return delegatedInvites.dispatch(roomConnection.participantId,command);
         const result=await (command?.type==='avatar'?roomConnection.dispatch(command):switchable.dispatch(command,options));
+        if(result?.ok&&result.snapshot?.kind==='lobby'&&lobbyCheckpoint?.roomId===roomId)await waitForLobbyCheckpoint(lobbyCheckpoint);
         if((command?.type==='resume'||command?.type==='join')&&result?.ok){
           const id=result.snapshot.participantId;
           for(const old of connectedHostPeers.filter(p=>p.roomConnection?.participantId===id&&p.peer!==peer)){
@@ -331,6 +383,11 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
   });
   document.addEventListener('submit',async event=>{const form=event.target.closest('[data-delegated-answer]');if(!form)return;event.preventDefault();const button=form.closest('.nearby-modal')?.querySelector('[form=net-delegated-answer]')||form.querySelector('button');if(button)button.disabled=true;try{await clientTransport.dispatch({type:'invitation-answer',answer:signalFromInput(form.elements.answer.value,'answer')});if(form.closest('[data-surface-state]')?.dataset.surfaceState==='active')renderClientLobby(true);}catch(error){toast(globalThis.PlayroomMessages.error(error));}finally{if(button)button.disabled=false;}});
   async function acceptAnswerSignal(signal){
+    // QR, Sound and a share target can redeliver a reply after the peer has been attached.
+    if(connectedHostPeers.length){
+      const parsed=W.parseSignal(signal,'answer');
+      if(connectedHostPeers.some(({peer})=>peer.matchesAcceptedAnswer?.(parsed)))return;
+    }
     if(!hostPeer)throw Error(globalThis.PlayroomMessages.text("ui.network-ui.f7eb06f83d1f"));
     const peer=hostPeer,sw=hostSwitch,serveClose=hostServeClose,roomConnection=hostRoomConnection,view=nearbyView,ticket=nearbyAttempt;
     if(!peer)throw Error(globalThis.PlayroomMessages.text("ui.network-ui.a4c786915b74"));
@@ -524,9 +581,17 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       if(stopped&&hostGameClient)void b.saveLibrary.setArchivedAsync('network:'+hostGameClient.snapshot.sessionId,true).then(()=>root.dispatchEvent(new Event('playroom:save-library-changed'))).catch(error=>toast(root.PlayroomMessages.error(error)));
       // A completed game remains in its immutable SessionStore journal.
       // Rebind existing RTC channels to room (instead of a new QR pairing).
-      b.roomService.returnToLobby(roomId,b.participantId(),{stopped});
+      const series=stopped?null:root.PlayroomHostSessionService.completedSeries(hostAuthority);
+      if(series&&!root.PlayroomMatchSeries.table(series).complete){
+        // Keep the predecessor locked until the successor commits or the
+        // room closes. Resume credentials in this lobby still belong to it.
+        releaseSeriesLobby();
+        seriesLobby={id:hostGameClient.snapshot.sessionId,release:hostLockRelease};
+        hostLockRelease=null;
+      }
+      b.roomService.returnToLobby(roomId,b.participantId(),{stopped,series});
       for(const item of connectedHostPeers)if(item.roomConnection?.participantId){
-        if(!stopped){const connection=item.switchable.current;item.switchable.completedHistory=Array.from({length:hostGameClient.snapshot.historyLength},(_,i)=>connection.history(i));}
+        if(!stopped)item.switchable.completedHistory=item.switchable.current.completedHistory?.();
         item.switchable?.set(item.roomConnection);
       }
       hostMount?.destroy?.();hostMount=null;
@@ -541,6 +606,16 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
   }
   function closeCloudRoom(){if(clientRoom){resumeStore.remove(clientRoom.id);closeClient();}else if(hostRoomId&&bridge().room()?.transportMode==='online')bridge().leaveLobby();}
   function leaveHostRoom(roomId,{preserveRoom=false}={}){
+    if(lobbyCheckpoint&&lobbyCheckpoint.roomId===roomId){
+      const checkpoint=lobbyCheckpoint;
+      return checkpoint.closing??=Promise.resolve(checkpoint.writing).then(()=>hostSessionStore.discardLobbyHandoff(roomId,checkpoint.id)).then(()=>{
+        if(lobbyCheckpoint===checkpoint)releaseLobbyCheckpoint();
+        leaveHostRoom(roomId,{preserveRoom});
+      },error=>{
+        checkpoint.closing=null;
+        throw error;
+      });
+    }
     root.PlayroomCloudNetwork?.stopHost?.();
     presentationGeneration++;
     if(hostRoomId&&hostRoomId!==roomId)throw Error(globalThis.PlayroomMessages.text("ui.network-ui.e48ad673e8fd"));
@@ -550,6 +625,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     closeHostPeer();hostGameClient?.close?.();hostGameClient=null;
     hostPushMonitor?.close();hostPushMonitor=null;hostAuthority?.dispose?.();hostAuthority=null;
     hostLockRelease?.();hostLockRelease=null;
+    releaseSeriesLobby();
     if(roomId){
       const service=bridge().roomService;
       for(const participant of service.snapshot(roomId).participants)
@@ -566,7 +642,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     clientSetupShown=true;
     if(!clientRoom)return;checkPendingReady();const view=pendingReady?{...clientRoom,participants:clientRoom.participants.map(p=>p.id===clientParticipantId?{...p,ready:pendingReady.ready}:p)}:clientRoom;const room=clientWaitingForLobby?{...view,phase:'lobby',participants:view.participants.map(p=>({...p,ready:p.id===clientParticipantId&&pendingReady?pendingReady.ready:!!p.bot}))}:view,app=document.getElementById('app');
     app.inert=!!document.getElementById('modal-root').children.length;
-    bridge().openModal(PlayroomLobbyView.render({room,participantId:clientParticipantId,waiting:clientWaitingForLobby}),'room-setup-modal');
+    bridge().openLobbyModal(PlayroomLobbyView.render({room,participantId:clientParticipantId,waiting:clientWaitingForLobby}),clientRoom);
     PlayroomLobbyView.notifyRulesChange(room,clientParticipantId,toast);
     const actor=clientParticipantId,roomId=room.id,current=()=>clientRoom?.id===roomId&&clientParticipantId===actor&&clientRoom.phase==='lobby'&&!clientRoom.recovery;
     PlayroomLobbyView.bindSummary(activeLobby());
@@ -601,13 +677,15 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
   async function startHostGame(room){
     if(hostStarted)return;hostStarted=true;
     const generation=++presentationGeneration;
-    const b=bridge();let persisted=false;
+    const b=bridge(),checkpoint=lobbyCheckpoint;let persisted=false;
     try{
-      const service=new root.PlayroomHostSessionService({engine:root.TabletopCore,Session,Authority,store:hostSessionStore,packs:b.packs,fingerprint:NetworkSessionStore.fingerprintPack,recovery:id=>b.roomService.exportRecovery(id),idFactory:()=>root.crypto.randomUUID()});
-      const started=await service.start(room,{restored:room.recovery?hostRecovery:null,rosterReady:rosterQueue.then(()=>{if(rosterError)throw rosterError;})});
+      if(checkpoint)await waitForLobbyCheckpoint(checkpoint);
+      const service=new root.PlayroomHostSessionService({engine:root.TabletopCore,Session,Authority,store:hostSessionStore,packs:b.packs,fingerprint:NetworkSessionStore.fingerprintPack,recovery:id=>b.roomService.exportRecovery(id),seriesEntry:(id,sessionId,players)=>b.roomService.seriesEntry(id,sessionId,players),idFactory:()=>root.crypto.randomUUID()});
+      const started=await service.start(room,{restored:room.recovery?hostRecovery:null,rosterReady:rosterQueue.then(()=>{if(rosterError)throw rosterError;}),lobbyHandoff:checkpoint?.id});
       persisted=started.persisted;if(started.releaseLock)hostLockRelease=started.releaseLock;
+      if(checkpoint&&lobbyCheckpoint===checkpoint)releaseLobbyCheckpoint();
       if(hostRoomId!==room.id){started.authority.dispose();hostLockRelease?.();hostLockRelease=null;return;}
-      resumeDurability(room.id,started.sessionId);hostAuthority=started.authority;
+      resumeDurability(room.id,started.sessionId);releaseSeriesLobby();hostAuthority=started.authority;
       for(const person of roomPresence(room).participants)if(person.playerIndex>=0)hostAuthority.setViewerConnected?.(person.playerIndex,person.connected);
       for(const item of connectedHostPeers){
         const id=item.roomConnection?.participantId;
@@ -629,6 +707,8 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       hostPushMonitor?.close();hostPushMonitor=null;hostAuthority?.dispose?.();hostAuthority=null;
       hostLockRelease?.();hostLockRelease=null;
       if(persisted||error.persisted){
+        if(checkpoint&&lobbyCheckpoint===checkpoint)releaseLobbyCheckpoint();
+        releaseSeriesLobby();
         // This room has already been committed. Starting a new session would
         // strand a saved match; require an explicit reload/recovery instead.
         closeHostPeer();
@@ -685,38 +765,45 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       const b=bridge(),saved=await hostSessionStore.load(sessionId,root.TabletopCore,Session);
       if(!saved)throw Error(globalThis.PlayroomMessages.text("ui.network-ui.54c1751f79a3"));
       b.packs.activate(saved.session.game,saved.session.packVersion);
-      const definition=b.packs.exportView(saved.session.game,saved.session.packVersion);
+      const definition=b.packs.viewForMount(saved.session.game,saved.session.packVersion);
       const room=saved.recovery?.room||saved.room;
       const occupied=room.seats.filter(seat=>seat.participantId).sort((a,c)=>a.index-c.index);
       const viewer=room.hostMode==='table'?-1:(occupied.find(seat=>seat.participantId===room.ownerId)?.playerIndex??occupied.findIndex(seat=>seat.participantId===room.ownerId));
       if(room.hostMode==='player'&&viewer<0)throw Error(globalThis.PlayroomMessages.text("ui.network-ui.89e815b6835d"));
       closeHostHistory();
-      archiveAuthority=new Authority(saved.session,{sessionId});
+      const series=root.PlayroomHostSessionService.archivedSeries(saved,occupied.map(seat=>seat.participantId));
+      archiveAuthority=new Authority(saved.session,{sessionId,seriesResult:series.project});
       const binding=archiveAuthority.connect(viewer);
       const reader={snapshot:binding.snapshot(),pending:null,subscribe:()=>()=>{},
         history:index=>Promise.resolve(binding.history(index)),send:()=>Promise.reject(Error(globalThis.PlayroomMessages.text("ui.network-ui.c71aa1caa69c")))};
       const exit=()=>{closeHostHistory();returnToOrigin();root.PlayroomUIFeedback?.back();};
+      const onContinueSeries=series.canResume&&!hostRoomId&&!clientRoom&&!b.room()&&!hasLegacySeriesFence(saved)?async()=>{
+        exit();await continueHostArchive(sessionId,{seriesPack:{game:saved.session.game,packVersion:saved.session.packVersion}});
+      }:null;
       b.closeModal(true);document.getElementById('app').inert=false;
-      archiveMount=Shared.mount(reader,definition,{surface:viewer<0?'table':'combined',readOnly:true,onExit:exit});
+      archiveMount=Shared.mount(reader,definition,{surface:viewer<0?'table':'combined',readOnly:true,onExit:exit,onContinueSeries});
       archiveKey=sessionId;archiveMount.render();if(results)archiveMount.showResult();else await archiveMount.openHistory(saved.revision);
     }catch(error){closeHostHistory();toast(globalThis.PlayroomMessages.text("ui.network-ui.1d784637945f",{p0:String(globalThis.PlayroomMessages.error(error))}));}
   }
-  async function continueHostArchive(sessionId){
+  async function continueHostArchive(sessionId,{seriesPack=null}={}){
     let pendingRelease=null,recoveredRoomId=null;
     try{
       const b=bridge(),profile=b.profile?.();
-      const record=(await hostSessionStore.readPrivate(sessionId)).record;
-      if(record?.transfer?.role==='incoming'&&record.transfer.state!=='active')await root.PlayroomHostTransferUI.recover(sessionId);
+      if(!seriesPack){
+        const record=(await hostSessionStore.readPrivate(sessionId)).record;
+        if(record?.transfer?.role==='incoming'&&record.transfer.state!=='active')await root.PlayroomHostTransferUI.recover(sessionId);
+      }
       if(hostStarted||hostAuthority||hostRoomId||b.room?.()||archiveMount)throw Error(globalThis.PlayroomMessages.text("ui.network-ui.876623c11b49"));
       if(!profile?.id)throw Error(globalThis.PlayroomMessages.text("ui.network-ui.7020d052b51a"));
-      const item=(await hostSessionStore.list()).find(entry=>entry.sessionId===sessionId);
+      const item=seriesPack||(await hostSessionStore.list()).find(entry=>entry.sessionId===sessionId);
       if(!item)throw Error(globalThis.PlayroomMessages.text("ui.network-ui.54c1751f79a3"));
       // The precise installed game version must exist. A newer pack may not
       // silently replace the rules or renderer of an already-started match.
       b.packs.activate(item.game,item.packVersion);
+      if(seriesPack)pendingRelease=await hostSessionStore.acquireHostLock(sessionId);
       const saved=await hostSessionStore.load(sessionId,root.TabletopCore,Session);
       if(!saved?.recovery)throw Error(globalThis.PlayroomMessages.text("ui.network-ui.81e659d33871"));
-      if(saved.session.current.status==='finished'){await openHostHistory(sessionId);return;}
+      if(!seriesPack&&saved.session.current.status==='finished'){await openHostHistory(sessionId);return;}
       if(!saved.packDigest)throw Error(globalThis.PlayroomMessages.text("ui.network-ui.b6c4e3048363"));
       if(await NetworkSessionStore.fingerprintPack(b.packs,saved.session.game,saved.session.packVersion)!==saved.packDigest)
         throw Error(globalThis.PlayroomMessages.text("ui.network-ui.bc91828177eb"));
@@ -727,16 +814,25 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       const occupied=room.seats.filter(seat=>seat.participantId||Number.isInteger(seat.playerIndex)).sort((a,c)=>a.index-c.index);
       if(occupied.length!==saved.session.current.players.length||occupied.some((seat,i)=>Number.isInteger(seat.playerIndex)&&seat.playerIndex!==i))
         throw Error(globalThis.PlayroomMessages.text("ui.network-ui.87e52afc27ef"));
+      const next=seriesPack?root.PlayroomHostSessionService.resumableSeries(saved,occupied.map(seat=>seat.participantId)):null;
+      if(seriesPack&&(!next||hasLegacySeriesFence(saved)))throw Error(globalThis.PlayroomMessages.text('ui.match-series.result-unavailable'));
       // An exclusive Web Lock prevents a second tab from serving the same game.
       // It is released on pagehide; the next page acquires it afresh.
-      pendingRelease=await hostSessionStore.acquireHostLock(sessionId);
+      pendingRelease??=await hostSessionStore.acquireHostLock(sessionId);
+      if(hostStarted||hostAuthority||hostRoomId||b.room?.()||archiveMount)throw Error(globalThis.PlayroomMessages.text("ui.network-ui.876623c11b49"));
       // All validation precedes attaching restored identities to the live UI.
-      const collected=b.roomService.restoreRecovery(saved.recovery,{hostId:room.ownerId,collect:true,sessionId,revision:saved.revision});recoveredRoomId=room.id;
-      hostRecovery=saved;rosterQueue=Promise.resolve();rosterError=null;
-      await persistRecoveryRoster(collected);
+      const collected=b.roomService.restoreRecovery(saved.recovery,{hostId:room.ownerId,collect:!seriesPack,sessionId,revision:saved.revision});recoveredRoomId=room.id;
+      rosterQueue=Promise.resolve();rosterError=null;
+      if(next){
+        b.roomService.returnToLobby(room.id,room.ownerId,{series:next});
+        seriesLobby={id:sessionId,release:pendingRelease};
+      }else{
+        hostRecovery=saved;await persistRecoveryRoster(collected);
+        hostLockRelease=pendingRelease;
+      }
+      pendingRelease=null;
       resumeDurability(room.id,sessionId);
       b.restoreHostedRoom(room.id,{participantId:room.ownerId});
-      hostLockRelease=pendingRelease;pendingRelease=null;
       hostRoomId=room.id;hostStarted=false;hostAuthority=null;
       hostRoomUnsub?.();
       hostRoomUnsub=b.roomService.subscribe(room.id,handleHostRoomState);
@@ -748,6 +844,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
         hostGameClient?.close?.();hostGameClient=null;
         hostPushMonitor?.close();hostPushMonitor=null;hostAuthority?.dispose?.();hostAuthority=null;hostRecovery=null;
         hostLockRelease?.();hostLockRelease=null;
+        releaseSeriesLobby();
         hostRoomId=null;hostStarted=false;
         const b=bridge();b.rollbackHostedRoom?.(recoveredRoomId);
         try{b.roomService.discardRecovery(recoveredRoomId);}catch(_){}
@@ -770,7 +867,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     if(responses.every(x=>x.status==='rejected')||strict&&responses.some(x=>x.status==='rejected'))throw Error(globalThis.PlayroomMessages.text("ui.network-ui.aea037a7edc2"));
     return responses.flatMap(x=>x.status==='fulfilled'?x.value:[]).map(item=>{let missingPack=false;try{if(!bridge().packs.list().some(p=>p.id===item.game&&p.version===item.packVersion))throw Error('Missing pack');}catch(_){missingPack=true;}return {...item,missingPack};});
   }
-  function archiveInUse(key){const currentClient=clientGameClient&&clientRoom&&'client:'+ClientHistory.id(clientRoom.id,clientParticipantId,clientGameClient.snapshot.sessionId);return key===hostGameClient?.snapshot?.sessionId||key===currentClient||key===archiveKey;}
+  function archiveInUse(key){const currentClient=clientGameClient&&clientRoom&&'client:'+ClientHistory.id(clientRoom.id,clientParticipantId,clientGameClient.snapshot.sessionId);return key===seriesLobby?.id||key===hostGameClient?.snapshot?.sessionId||key===currentClient||key===archiveKey;}
   async function removeNetworkArchive(key,{guard=()=>{}}={}){
     const check=()=>{guard();if(archiveInUse(key))throw Error(globalThis.PlayroomMessages.text("ui.network-ui.1d9b61031806"));};check();
     if(key.startsWith('client:')){const entries=await clientHistoryStore.list();check();const entry=entries.find(e=>e.id===key.slice(7));await clientHistoryStore.remove(key.slice(7),{guard:check});check();if(entry&&clientRoom?.id!==entry.roomId&&!entries.some(e=>e.id!==entry.id&&e.roomId===entry.roomId))resumeStore.remove(entry.roomId);}
@@ -788,7 +885,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       const saved=await clientHistoryStore.read(key);
       if(!saved?.frames.length)throw Error(globalThis.PlayroomMessages.text("ui.network-ui.caf7a985ceca"));
       const b=bridge();b.packs.activate(saved.game,saved.packVersion);
-      const last=saved.frames.at(-1),definition=b.packs.exportView(saved.game,saved.packVersion);
+      const last=saved.frames.at(-1),definition=b.packs.viewForMount(saved.game,saved.packVersion);
       closeHostHistory();
       archiveAuthority=null;
       const epoch=last.authorityEpoch;
@@ -829,7 +926,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     if(clientGameClient||clientWaitingForLobby)return;
     try{
       clearInterval(clientLobbyTimer);clientLobbyTimer=null;clientUnsub?.();clientUnsub=null;
-      const b=bridge();b.packs.activate(snapshot.game,snapshot.packVersion);const definition=b.packs.exportView(snapshot.game,snapshot.packVersion);
+      bridge().packs.activate(snapshot.game,snapshot.packVersion);
       clientGameClient=new SessionClient(clientTransport,{
         readHistory:async(index,current)=>{
           if(!clientHistoryStore||!clientRoom||!clientParticipantId)return null;
@@ -888,6 +985,17 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     if(target.dataset.netAction==='dismiss-room'){if(!clientGameClient)networkInMenu=true;bridge().closeModal();return;}
     if(target.dataset.netAction==='room'){renderClientLobby(true);return;}
     if(target.dataset.netAction==='collapse'){bridge().closeModal(true);root.PlayroomUIFeedback?.back();return;}
+    if(target.dataset.netAction==='clock-control'){
+      const authority=roomClockAuthority();
+      if(!authority)return;
+      const pending=Promise.resolve().then(()=>{
+        if(roomClockAuthority()!==authority)throw Error('CLOCK_ACTION_UNAVAILABLE');
+        return authority.runClockAction(JSON.parse(target.dataset.clockControl));
+      }).catch(error=>toast(globalThis.PlayroomMessages.error(error)));
+      hostTransferCalls.add(pending);
+      void pending.finally(()=>hostTransferCalls.delete(pending));
+      return;
+    }
     if(target.dataset.netAction==='stop-match'){
       const authority=hostAuthority;if(!authority)return;
       bridge().confirmOperation(globalThis.PlayroomMessages.text("ui.network-ui.2940743f79f8"),{isCurrent:()=>hostAuthority===authority,onConfirm:async()=>{await authority.stopForLobby();exitHostGame({stopped:true});}});return;
@@ -986,7 +1094,10 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     try{
       if(!stored){if(hostAuthority&&hostGameClient?.snapshot?.sessionId===key)thaw=await transferFreeze();else release=await hostSessionStore.acquireHostLock(key);}
       const raw=thaw?(await transferExport()).archive:await hostSessionStore.readPrivate(key),saved=root.PlayroomHostRecovery.restore(raw,key,root.TabletopCore,Session);
-      if(!saved)throw Error('SAVE_NOT_FOUND');return {kind:'session',session:saved.session,roomName:saved.room.name,pack:b.packs.exportPack(saved.session.game,saved.session.packVersion)};
+      if(!saved)throw Error('SAVE_NOT_FOUND');
+      const clockTime=thaw?hostAuthority?.gameTime:saved.clockTime;
+      if(saved.session.current.clock!==undefined&&Number.isSafeInteger(clockTime))saved.session.setClockTime(clockTime);
+      return {kind:'session',session:saved.session,roomName:saved.room.name,pack:b.packs.exportPack(saved.session.game,saved.session.packVersion)};
     }finally{thaw?.();release?.();}
   }
   function transferContext(){
@@ -1016,7 +1127,14 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     return {archive,pack:bridge().packs.exportPack(room.game.id,room.game.version),chat:roomChat.records(hostRoomId)};
   }
   async function transferFence(id,target,cloudRoomId){
-    if(!hostTransferBlocked)throw Error('HOST_TRANSFER_UNAVAILABLE');if(bridge().roomService.snapshot(hostRoomId).phase==='lobby'){await root.PlayroomData.transact(()=>root.PlayroomData.setItem('playroom.lobby-fence.v1.'+hostRoomId,JSON.stringify({id,target,cloudRoomId})));return;}if(!hostAuthority)throw Error('HOST_TRANSFER_UNAVAILABLE');
+    if(!hostTransferBlocked)throw Error('HOST_TRANSFER_UNAVAILABLE');
+    if(bridge().roomService.snapshot(hostRoomId).phase==='lobby'){
+      await waitForLobbyCheckpoint(lobbyCheckpoint);
+      await hostSessionStore.fenceLobbyTransfer({sessionId:seriesLobby?.id,roomId:hostRoomId,transferId:id,previousHandoff:lobbyCheckpoint?.id});
+      releaseLobbyCheckpoint();
+      return;
+    }
+    if(!hostAuthority)throw Error('HOST_TRANSFER_UNAVAILABLE');
     await hostSessionStore.transferState(hostGameClient.snapshot.sessionId,id,'outgoing',{target,cloudRoomId});
     hostAuthority.dispose();hostMount?.setConnected?.(false,{notice:true});
   }
@@ -1037,12 +1155,23 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     b.closeModal(true);
   }
   function transferValidateLobby(payload){const v=new M.RoomService({idFactory:()=>root.crypto.randomUUID(),clock:()=>Date.now(),random:()=>Math.random(),tokenFactory:()=>Array.from(root.crypto.getRandomValues(new Uint8Array(32)),x=>x.toString(16).padStart(2,'0')).join('')});return v.restoreRecovery(payload.lobby.recovery,{hostId:payload.lobby.target,lobby:true});}
-  async function transferPromoteLobby({payload,peers=new Map()}){
+  async function transferPromoteLobby({payload,peers=new Map(),retainedLobby=null}){
     const b=bridge(),lobby=payload.lobby,recovery=lobby.recovery;root.PlayroomCloudNetwork?.stopClient();closeClient({preserveIntent:true});
-    const parsed=b.packs.parse(payload.pack);if(parsed.manifest.id!==recovery.room.game.id||parsed.manifest.version!==recovery.room.game.version)throw Error('HOST_TRANSFER_PACK_MISMATCH');await b.packs.install(b.packs.prepare(parsed),{activate:true});
+    const parsed=b.packs.parse(payload.pack);if(parsed.manifest.id!==recovery.room.game.id||parsed.manifest.version!==recovery.room.game.version)throw Error('HOST_TRANSFER_PACK_MISMATCH');await b.packs.install(await b.packs.prepareInstall(parsed),{activate:true});
     const existing=b.room();if(existing&&(existing.id!==recovery.room.id||existing.ownerId!==lobby.target||existing.phase!=='lobby'))throw Error('HOST_TRANSFER_CHANGED');const room=existing?b.roomService.snapshot(existing.id):b.roomService.restoreRecovery(recovery,{hostId:lobby.target,lobby:true});hostRoomId=room.id;hostStarted=false;hostAuthority=null;hostTransferBlocked=false;rosterQueue=Promise.resolve();rosterError=null;
-    await root.PlayroomData.transact(()=>root.PlayroomData.setItem('playroom.room-chat.v1.'+room.id,JSON.stringify(payload.chat||[])));
+    const chatKey='playroom.room-chat.v1.'+room.id;
+    if(!retainedLobby?.restoring||root.PlayroomData.getItem(chatKey)===null)
+      await root.PlayroomData.transact(()=>root.PlayroomData.setItem(chatKey,JSON.stringify(payload.chat||[])));
     b.restoreHostedRoom(room.id,{participantId:room.ownerId});hostRoomUnsub?.();hostRoomUnsub=b.roomService.subscribe(room.id,handleHostRoomState);
+    if(retainedLobby){
+      const checkpoint=lobbyCheckpoint={...retainedLobby,roomId:room.id,gameKey:room.game.id+':'+room.game.version};
+      checkpoint.stopWatching=b.roomService.observeLobbyCheckpoint(room.id,phase=>queueLobbyCheckpoint(checkpoint,phase));
+      // Reconnects rotate credentials before sending the new token to a peer.
+      checkpoint.stopResume=b.roomService.setResumeDurability(room.id,async credentials=>{
+        await waitForLobbyCheckpoint(checkpoint);
+        return hostSessionStore.rotateLobbyResumeToken(checkpoint.id,{...credentials,roomId:room.id});
+      });
+    }
     for(const [id,peer]of peers){if(connectedHostPeers.some(p=>p.peer===peer))continue;const connection=b.roomService.connection(room.id,{boundParticipantId:id}),switchable=new M.SwitchableConnection(connection),admit=lobby.cloudRoomId?()=>root.PlayroomHostTransferUI.checkPeer(lobby.cloudRoomId,id):null;const serveClose=hostPeerServing(peer,switchable,connection,room.id,admit);connectedHostPeers.push({peer,roomConnection:connection,switchable,serveClose});}
     if(lobby.cloudRoomId)await root.PlayroomCloudNetwork.host(lobby.cloudRoomId);b.renderLobby();
   }
@@ -1052,12 +1181,13 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       const sourceId=b.participantId(),transfer=root.PlayroomHostTransferUI.senderState();
       if(!transfer||transfer.id!==root.PlayroomHostTransferUI.guestId(peer))throw Error('HOST_TRANSFER_UNAUTHORIZED');
       resumeStore.save(roomId,sourceId,transfer.token);
-      leaveHostRoom(roomId);b.rollbackHostedRoom(roomId);
+      await leaveHostRoom(roomId);b.rollbackHostedRoom(roomId);
     }
     root.PlayroomCloudNetwork?.stopClient();networkInMenu=false;closeClient({preserveIntent:true});clientPeer=peer;hostTransferBlocked=false;
     if(cloudRoomId)root.PlayroomCloudNetwork.adoptClient(cloudRoomId);await attachClientPeer(roomId);
   }
   root.PlayroomNetworkLibrary=Object.freeze({isClient:()=>!!clientRoom,isConnecting:()=>clientAttachments>0,exitToMenu:parkNetworkView,enterActiveRoom:returnToNetwork,cancelJoin:()=>{if(!clientRoom||clientAttachments>0)closeClient();},playersMetadata,portableSource,playerControlContext,prepareRoster,removeParticipant,transferSaveResume:token=>hostTransferBlocked&&hostRoomId&&resumeStore.save(hostRoomId,bridge().participantId(),token),transferContext,transferFreeze,transferExport,transferFence,transferPromote,transferPromoteLobby,transferValidateLobby,transferAttach,transferStore:hostSessionStore,transferClient:()=>clientRoom&&clientPeer?{room:clientGameClient?{...clientRoom,phase:'playing'}:clientRoom,id:clientParticipantId,channel:clientPeer.channel}:null,chatContext,reactionContext,inviteContext:()=>({room:clientRoom||bridge().room(),participantId:clientRoom?clientParticipantId:bridge().participantId(),cloudRoomId:root.PlayroomCloudNetwork?.roomId?.()}),showManualInvite:hostInvite,showManualJoin:showJoin,publicRoomSummary,cloudResumeParticipantId,cloudHostPeer,cloudAttachClient,canCloudHost:()=>!!bridge().room()&&bridge().room().transportMode==='online'&&bridge().room().ownerId===bridge().participantId()&&!clientRoom,setAvatar:avatar=>roomCommand({type:'avatar',avatar}),renameNickname:nickname=>roomCommand({type:'rename',nickname},{background:true}),configureHostPorts({rooms}){hostRooms=rooms;},list:listNetworkArchives,playerMetadata,hasActiveRoom,cloudIdle:()=>Promise.all([historySync.idle,rosterQueue]),
+    mountedGame:()=>clientMount?clientGameClient?.snapshot?.game:hostMount?hostGameClient?.snapshot?.game:undefined,
     ruleContext:gameId=>{const current=clientRoom||bridge().room();return current?.game?.id===gameId?current.rules:null;},
     showSettings:(options={})=>bridge().showSettings({room:clientRoom||bridge().room(),participantId:clientRoom?clientParticipantId:bridge().participantId(),client:!!clientRoom,...options}),leaveClientRoom:closeClient,closeCloudRoom,openRoom:()=>clientRoom?renderClientLobby(true):bridge().renderLobby(),remove:removeNetworkArchive,inUse:archiveInUse,stopSaved,inspect:inspectHostArchive,continue:continueSavedNetwork,history:openNetworkHistory,leaveHostRoom});
   root.PlayroomNetworkDebug=()=>({
@@ -1066,5 +1196,5 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
   });
   const observer=new MutationObserver(ensureButtons);observer.observe(document.documentElement,{subtree:true,childList:true,attributes:true,attributeFilter:['open']});ensureButtons();
   document.addEventListener('click',event=>{const back=event.target.closest('.network-game .table-header [data-command=home]');if(back&&!archiveMount){event.preventDefault();event.stopImmediatePropagation();const client=hostGameClient||clientGameClient;if(client?.snapshot?.state?.status==='finished')(hostGameClient?exitHostGame:exitClientGame)({finished:true});else parkNetworkView();root.PlayroomUIFeedback?.back();}},true);
-  root.addEventListener('pagehide',()=>{closeHostHistory();closeClient();hostRoomUnsub?.();hostAuthority?.dispose?.();closeHostPeer();hostLockRelease?.();hostLockRelease=null;});
+  root.addEventListener('pagehide',()=>{closeHostHistory();closeClient();hostRoomUnsub?.();hostAuthority?.dispose?.();closeHostPeer();hostLockRelease?.();hostLockRelease=null;releaseSeriesLobby();releaseLobbyCheckpoint();});
 })(globalThis);

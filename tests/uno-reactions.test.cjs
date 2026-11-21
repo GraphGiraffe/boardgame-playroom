@@ -1,8 +1,13 @@
 'use strict';
-const {test}=require('node:test');
+const {test,before,after}=require('node:test');
 const assert=require('node:assert/strict');
 const E=require('../core/engine.js'),Session=require('../core/session.js');
-require(require('node:path').resolve(process.env.PLAYROOM_PACKS_DIR || require('node:path').join(__dirname,'../packs'),'uno/rules.js'));
+const packDir=require('node:path').resolve(process.env.PLAYROOM_PACKS_DIR||require('node:path').join(__dirname,'../packs'),'uno');
+let companion;
+if(process.env.PLAYROOM_TEST_INSTALLED_PACKS){
+  before(async()=>{companion=await require('./sdk-installed.cjs').bootstrap({ids:['uno'],engine:E});});
+  after(()=>companion?.close());
+}else require(require('node:path').join(packDir,'rules.js'));
 const create=(count=2,mode='manual',seed=17,preset='classic')=>E.createGame('uno',{seed,preset,unoMode:mode,players:Array.from({length:count},(_,i)=>({name:`P${i}`,bot:true}))});
 function fixture(hands=[['u1','u3'],['u5','u7']],{pending=null,turn=0,mode='manual'}={}){
   const s=create(hands.length,mode),d=s.data,all=new Map([...d.hands.flat(),...d.drawPile,...d.discard].map(c=>[c.id,c]));
@@ -211,6 +216,30 @@ test('a timely declaration beats late/fresh accusations and protocol rejects for
     assert.equal(send(0,'declare-uno').ignored,true);assert.equal(send(1,'accuse-uno',0).ignored,true);assert.equal(authority.revision,revision);
   }finally{authority.dispose();}
 });
+test('cancelled host transfer resumes the remaining UNO reaction time',async()=>{
+  for(const acknowledged of [true,false]){
+    const {clock,authority,clients,send}=onlineFixture();
+    try{
+      assert(send(0,'play').ok);
+      const ready=Protocol.presentationReady(clients[0].snapshot());
+      if(acknowledged)assert(clients[0].presentationReady(ready).ok);
+      clock.advance(400);
+      const thaw=await authority.suspendForTransfer();
+      assert.equal(clock.pending,0);
+      clock.advance(15_000);
+      assert.equal(send(1,'accuse-uno',0).code,'PAUSED');
+      thaw();
+      if(acknowledged)assert.equal(clients[0].presentationReady(ready).duplicate,true);
+      clock.advance(acknowledged?599:10_599);
+      assert.equal(clients[1].snapshot().reactionWindow.protected,true);
+      assert.equal(send(1,'accuse-uno',0).ignored,true);
+      clock.advance(1);
+      assert.equal(clients[1].snapshot().reactionWindow.protected,false);
+      assert(send(1,'accuse-uno',0).ok);
+      assert.equal(authority.revision,2);
+    }finally{authority.dispose();}
+  }
+});
 test('bots wait three seconds after readiness and missing readiness has a bounded ten-second fallback',()=>{
   for(const acknowledge of [true,false]){const {clock,authority,clients,send,session}=onlineFixture({bots:[false,false,true]});try{
     send(0,'play');authority.scheduleBot({delay:10});if(acknowledge)clients[0].presentationReady(Protocol.presentationReady(clients[0].snapshot()));
@@ -326,16 +355,17 @@ test('bot declaration choices are stable per episode and difficulty includes imm
 
 
 test('UNO learning receives public declaration windows and records an out-of-turn call during feedback',()=>{
- const Tutorial=require(require('node:path').resolve(process.env.PLAYROOM_PACKS_DIR || require('node:path').join(__dirname,'../packs'),'uno/presentation/tutorial.js'))({format:m=>m.key});
+ const tutorial=companion?companion.views.get('uno').tutorial:require(require('node:path').join(packDir,'presentation/tutorial.js'))({format:m=>m.key});
  const Controller=require('../application/tutorial-controller.js');
  let s=fixture([['u1'],['u5','u7']],{turn:1});s.players[0].bot=false;
  const projected=E.project(s,0);assert(Array.isArray(projected.data.uno.situations));assert.deepEqual(projected.scene.declarationOpen,[true,false]);
  const owner={},controller=new Controller(),context={owner,viewer:0,state:projected,actions:E.legalActions(s,0),busy:true,active:true};
- const result=controller.update(context,Tutorial);assert(result.guide.concurrent);assert(result.progress.started);
+ const result=controller.update(context,tutorial);assert(result.guide.concurrent);assert(result.progress.started);
  const step=result.guide.steps.find(x=>x.id==='declare-uno');assert(step.available);assert(step.immediate);
  const token=controller.capture(owner,0);assert(token);
- s=declare(s,0);controller.committed(owner,0,{type:'declare-uno'},token);
- const after=controller.update({...context,state:E.project(s,0),actions:E.legalActions(s,0),busy:false},Tutorial);
+ const command=E.availableCommands(s,0).find(action=>action.type==='declare-uno');
+ s=E.applyAction(s,0,command);controller.committed(owner,0,command,token);
+ const after=controller.update({...context,state:E.project(s,0),actions:E.legalActions(s,0),busy:false},tutorial);
  assert(after.progress.seen.has('declare-uno'));assert.equal(after.guide.steps.find(x=>x.id==='declare-uno').available,false);
  assert.equal(E.project(s,1).scene.declarationOpen[0],false);
 });
@@ -406,7 +436,23 @@ test('next-player indicator is reconstructed for every viewer and Table without 
  const Authority=require('../core/authority.js'),Projection=require('../presentation/network-projection.js');
  for(const direction of [1,-1]){const s=fixture([['u1','u3'],['u5','u7'],['u11','u13']]);s.data.direction=direction;const expected=(s.turn+direction+s.players.length)%s.players.length;
   for(const viewer of [-1,0,1,2])assert.equal(E.project(s,viewer).scene.nextPlayer,expected,'local viewer '+viewer);
-  const live=new Session(E,'uno',{seed:17,players:s.players,firstPlayerMode:'assigned',firstPlayer:0}),a=new Authority(live),bindings=[a.connect(0),a.connect(1),a.connectTable([0,1,2])];try{for(const binding of bindings){const raw=Projection.compact(binding.snapshot({wire:true}));assert(!Object.hasOwn(raw.model.data,'nextPlayer'));const restored=Projection.restore(raw,(event,frame)=>E.get('uno').presentEvent(event,frame.state.players),E.get('uno'));assert.equal(restored.state.scene.nextPlayer,1);}}finally{bindings.forEach(b=>b.close());a.dispose();}
+ }
+ for(const bot of [false,true]){
+  const players=[0,1,2].map(index=>({name:`P${index}`,bot}));
+  const live=new Session(E,'uno',{seed:17,players,firstPlayerMode:'assigned',firstPlayer:0}),pack=E.get('uno',live.packVersion),a=new Authority(live);
+  const bindings=[a.connect(0),a.connect(1),a.connect(-1),a.connectTable([0,1,2])];
+  try{
+   const frames=[...bindings.map(binding=>binding.snapshot({wire:true})),bindings[0].history(0,{wire:true})];
+   for(const frame of frames){
+    const raw=Projection.compact(frame);
+    for(const key of ['nextPlayer','nextPlayerByCard','turnPreviewByCard'])assert(!Object.hasOwn(raw.model.data,key),key);
+    const restored=Projection.restore(raw,(event,snapshot)=>pack.presentEvent(event,snapshot.state.players),pack);
+    assert.equal(restored.state.scene.nextPlayer,1);
+    const hints=['nextPlayerByCard','turnPreviewByCard'].flatMap(key=>Object.keys(restored.state.scene[key]||{}));
+    if(!bot&&frame.kind==='snapshot'&&frame.viewer===0)assert(hints.length>0,'the active human still sees legal card previews');
+    else assert.deepEqual(hints,[],'read-only and inactive views expose no card previews');
+   }
+  }finally{bindings.forEach(binding=>binding.close());a.dispose();}
  }
  const finished=play(fixture([['u1'],['u5','u7'],['u11','u13']]),0,'u1');assert.equal(finished.status,'finished');assert.equal(E.project(finished,0).scene.nextPlayer,null);
 });

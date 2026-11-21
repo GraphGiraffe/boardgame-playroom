@@ -66,3 +66,33 @@ test('switching the live room after a completed match does not delete the guest 
   assert.equal(rejoined.snapshot.room.game.id,'next-match-checkers');
   assert.equal(rejoined.snapshot.room.seats[1].participantId,f.joined.snapshot.participantId);
 });
+
+test('room carries a series only for the same pack and physical roster',()=>{
+  const f=fixture(),roomId=f.room.id,guest=f.joined.snapshot.participantId;
+  const Series=require('../application/match-series.js'),policy={mode:'wins',target:2};
+  assert.throws(()=>f.rooms.configureSeries(roomId,guest,policy));
+  f.rooms.configure(roomId,'host',{seatOrder:'random'});
+  f.rooms.configureSeries(roomId,'host',policy);
+  assert.equal(f.rooms.snapshot(roomId).participants.find(person=>person.id===guest).ready,false);
+  f.rooms.setReady(roomId,'host',true);f.connection.dispatch({type:'ready',ready:true});
+  f.ready();
+  const original=f.rooms.snapshot(roomId).seats.map(seat=>seat.participantId);
+  const first=f.rooms.seriesEntry(roomId,'first',original);
+  const finished=Series.finish(first,'first',{status:'finished',winners:[0]});
+  const lobby=f.rooms.returnToLobby(roomId,'host',{series:finished});
+  assert.equal(lobby.seriesProgress,undefined);
+  assert.deepEqual(lobby.seriesPolicy,policy);
+  assert.equal(f.rooms.seriesEntry(roomId,'second',original).series,finished);
+  f.rooms.setReady(roomId,'host',true);f.connection.dispatch({type:'ready',ready:true});
+  f.ready();
+  assert.deepEqual(f.rooms.snapshot(roomId).seats.map(seat=>seat.participantId),original);
+  assert.equal(f.rooms.exportRecovery(roomId).room.seriesProgress,undefined);
+
+  f.rooms.returnToLobby(roomId,'host',{series:finished});
+  f.rooms.moveParticipant(roomId,'host','host',f.rooms.snapshot(roomId).seats.find(seat=>seat.participantId===guest).id);
+  const swapped=f.rooms.snapshot(roomId).seats.map(seat=>seat.participantId);
+  const third=f.rooms.seriesEntry(roomId,'third',swapped);
+  assert.notDeepEqual(swapped,original);
+  assert.equal(third.number,1);
+  assert.equal(third.series.id,'third');
+});

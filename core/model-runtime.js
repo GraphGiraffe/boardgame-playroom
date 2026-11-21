@@ -6,7 +6,7 @@
   else root.PlayroomModelRuntime = api;
 })(globalThis, function (Values, Events) {
   'use strict';
-  const {record,integer,identifier,ModelError,check,snapshot,canonical,command}=Values;
+  const {record,integer,identifier,ModelError,check,snapshot,composeValue,composeRecord,composeArray,canonical,command}=Values;
   const Difficulty=globalThis.PlayroomBotDifficulty||require('./bot-difficulty.js');
   const Inputs=globalThis.PlayroomModelInputs||(typeof require==='function'?require('./model-inputs.js'):null);
   const event=Events.validate, projectEvents=Events.project;
@@ -31,7 +31,7 @@
         (definition.observe === undefined || typeof definition.observe === 'function') &&
         (definition.score === undefined || typeof definition.score === 'function') &&
         (definition.rounds===undefined||typeof definition.rounds==='boolean')&&
-        ['storageState','checkpoint','preparing','reactions','reactionControl','reactionWindows','botReaction','botReactionDelay','decisionWindow','botContext','turnOrder','inputs','advance'].every(key=>
+        ['storageState','checkpoint','preparing','reactions','reactionControl','reactionWindows','botReaction','botReactionDelay','decisionWindow','botContext','turnOrder','inputs','advance','clockActions'].every(key=>
           definition[key]===undefined||typeof definition[key]==='function'), 'MODEL_INVALID');
       this.#definition = Object.freeze({...definition});
       this.id = definition.id; this.minPlayers = definition.minPlayers; this.maxPlayers = definition.maxPlayers;
@@ -93,7 +93,7 @@
       return snapshot(this.#choices(position,actor,'reactions').map(choice=>choice.command));
     }
     availableActions(position, actor) {
-      return snapshot([...this.legalActions(position,actor),...this.reactions(position,actor)]);
+      return Values.composeArray([...this.legalActions(position,actor),...this.reactions(position,actor)]);
     }
     inputChoices(position,actor){
       this.validate(position);
@@ -112,6 +112,13 @@
         (value.episode===undefined||integer(value.episode,0,position.revision??0)), 'REACTION_INVALID');
       if(value.command!==undefined)command(value.command);
       return snapshot(value);
+    }
+    reactionControls(position,actor,actions) {
+      if(!this.#definition.reactionControl)return Object.freeze(actions.map(()=>null));
+      const current=this.#position(position);
+      // A projected list shares one position. Every choice still gets the
+      // same validation and rule hook as a separately submitted command.
+      return Object.freeze(actions.map(action=>this.reactionControl(current,actor,action)));
     }
     reactionWindows(position) {
       this.validate(position);
@@ -169,6 +176,7 @@
       return found.command;
     }
     apply(position, actor, action, context={}) {
+      position=this.#position(position);
       const now=context.now??position.clock??0;check(integer(now,position.clock??0,Number.MAX_SAFE_INTEGER),'CLOCK_INVALID');
       if(this.reactionControl(position,actor,action)?.ignore)return snapshot({position,events:[]});
       const legal = this.commandFor(position, actor, action);
@@ -176,10 +184,22 @@
       if(this.#definition.advance&&result?.position)result={...result,position:{...result.position,clock:now}};
       return this.#transition(position,result);
     }
-    advance(position,now){
+    // Clock actions have no player actor and never enter player or Table projections.
+    clockActions(position){
+      this.validate(position);
+      if(!this.#definition.advance||position.status!=='playing')return [];
+      const actions=this.#definition.clockActions?.(this.#position(position))??[];
+      check(Array.isArray(actions)&&actions.length<=16&&new Set(actions.map(command)).size===actions.length,'CLOCK_ACTION_INVALID');
+      return snapshot(actions);
+    }
+    advance(position,now,control){
       this.validate(position);check(integer(now,position.clock??0,Number.MAX_SAFE_INTEGER),'CLOCK_INVALID');
+      if(control!==undefined){
+        const signature=command(control);
+        check(this.clockActions(position).some(action=>command(action)===signature),'CLOCK_ACTION_UNAVAILABLE');
+      }
       if(!this.#definition.advance||position.status!=='playing')return snapshot({position,events:[]});
-      const result=this.#definition.advance(this.#position(position),now);
+      const result=this.#definition.advance(this.#position(position),now,control===undefined?undefined:snapshot(control));
       if(result===null||result===undefined)return snapshot({position,events:[]});
       check(record(result)&&record(result.position),'TRANSITION_INVALID');
       return this.#transition(position,{...result,position:{...result.position,clock:now}});
@@ -189,19 +209,41 @@
         result.position.playerCount === position.playerCount, 'TRANSITION_INVALID');
       check(!result.roundEnded||this.#definition.rounds===true,'ROUND_NOT_DECLARED');
       check((result.turnEnded===undefined||typeof result.turnEnded==='boolean')&&(result.roundEnded===undefined||typeof result.roundEnded==='boolean')&&(!result.roundEnded||result.turnEnded),'TRANSITION_INVALID');
-      const revision=(position.revision??0)+1,timeline=JSON.parse(JSON.stringify(position.timeline||{turn:1,starts:[0]}));
+      const revision=(position.revision??0)+1;
+      // Timeline entries are engine-owned history. Retain their references
+      // until prep resets the timeline or a new turn or round begins.
+      let timeline=position.timeline?snapshot(position.timeline):composeRecord({turn:1,starts:[0]});
       const wasPreparing=!!this.#definition.preparing?.(position),preparing=!!this.#definition.preparing?.(result.position);
-      if(this.#definition.preparing){timeline.preparing=preparing;if(wasPreparing){timeline.turn=1;timeline.starts=[revision];timeline.playStart=revision;if(timeline.round){timeline.round=1;timeline.roundStarts=[revision];}}}
-      if(!wasPreparing&&!preparing&&result.turnEnded&&result.position.status==='playing'){timeline.turn++;timeline.starts.push(revision);}
-      if(!wasPreparing&&!preparing&&result.roundEnded&&result.position.status==='playing'&&timeline.round){timeline.round++;timeline.roundStarts.push(revision);}
-      const next={...result,position:{...result.position,revision,timeline}};
-      const owned=snapshot(next);
+      if(wasPreparing){
+        const starts=composeArray([revision]);
+        timeline=composeRecord({...timeline,preparing,turn:1,starts,playStart:revision,
+          ...(timeline.round?{round:1,roundStarts:starts}:{})});
+      }else if(!preparing&&result.turnEnded&&result.position.status==='playing'){
+        timeline=composeRecord({...timeline,turn:timeline.turn+1,starts:[...timeline.starts,revision],
+          ...(result.roundEnded&&timeline.round?{round:timeline.round+1,roundStarts:[...timeline.roundStarts,revision]}:{}),
+          ...(this.#definition.preparing?{preparing}:{})});
+      }else if(this.#definition.preparing&&preparing!==timeline.preparing){
+        timeline=composeRecord({...timeline,preparing});
+      }
+      const nextPosition=composeRecord({...result.position,revision,timeline},{strict:true});
+      const owned=composeRecord({...result,position:nextPosition},{strict:true});
       this.validate(owned.position);
       for (const value of owned.events) event(value, position.playerCount);
       this.#validated.add(owned.position);
       return owned;
     }
     project(position, viewer, events = [], {factsOnly=false}={}) {
+      return this.#project(position,viewer,(audience,count)=>projectEvents(events,audience,count),factsOnly);
+    }
+    // The installed adapter supplies facts already authorized for this view.
+    // localData can read them. The adapter retains its copy for presentation.
+    projectForHost(position, viewer, facts, {table=false}={}) {
+      check(Array.isArray(facts),'EVENT_INVALID');
+      const projected=this.#project(position,table?-1:viewer,()=>snapshot(facts),false,false);
+      return table?this.#tableProjection(position,viewer,projected,false):projected;
+    }
+    #project(position, viewer, readEvents, factsOnly, includeEvents=true) {
+      position=this.#position(position);
       this.validate(position);
       if (!integer(viewer, 0, position.playerCount - 1)) viewer = -1;
       const data = this.#definition.project(this.#position(position), viewer);
@@ -211,38 +253,64 @@
         ...(position.preset!==undefined?{preset:position.preset}:{}),
         ...(position.revision!==undefined?{revision:position.revision}:{}),
         decisionWindow:this.decisionWindow(position),winners:position.winners,timeline:position.timeline||{turn:1,starts:[0]}, data,
-        events:projectEvents(events, viewer, position.playerCount)};
-      if(factsOnly){check(typeof this.#definition.localChoices==='function','LOCAL_CHOICES_REQUIRED');return snapshot({...base,choicesVersion:1});}
-      return snapshot({...base,data:this.#definition.localData?this.#definition.localData(base):base.data,actions:this.availableActions(position,viewer),...(this.#definition.inputs?{inputs:this.inputChoices(position,viewer)}:{})});
+        events:[]};
+      const facts=readEvents(viewer,position.playerCount);
+      if(includeEvents)base.events=facts;
+      if(factsOnly){check(typeof this.#definition.localChoices==='function','LOCAL_CHOICES_REQUIRED');return composeValue({...base,choicesVersion:1});}
+      return composeValue({...base,data:this.#definition.localData?this.#definition.localData(includeEvents?base:{...base,events:facts}):base.data,actions:this.availableActions(position,viewer),...(this.#definition.inputs?{inputs:this.inputChoices(position,viewer)}:{})});
     }
     projectTable(position, actor, events = [], options={}) {
       const projected = this.project(position, -1, events,options);
-      if (!integer(actor, 0, position.playerCount - 1)) actor = -1;
-      if(options.factsOnly)return snapshot({...projected,actor});
-      return snapshot({...projected, actor,
+      return this.#tableProjection(position,actor,projected,options.factsOnly);
+    }
+    #tableProjection(position, actor, projected, factsOnly) {
+      if (!integer(actor, 0, position.playerCount - 1)) return projected;
+      // Spectator data is already validated and immutable. Only the actor
+      // and public controls change when composing a Table projection.
+      if(factsOnly)return Values.composeRecord({...projected,actor});
+      return Values.composeRecord({...projected, actor,
         actions:[...this.#choices(position, actor),...this.#choices(position,actor,'reactions')].filter(choice => choice.visibility === 'public').map(choice => choice.command),...(this.#definition.inputs?{inputs:this.inputChoices(position,actor).filter(choice=>choice.visibility==='public')}:{})});
     }
-    localProjection(projection) {
+    #localViewData(projection) {
       check(record(projection)&&projection.choicesVersion===1&&projection.game===this.id&&integer(projection.viewer,-1,projection.playerCount-1)&&integer(projection.actor,-1,projection.playerCount-1)&&typeof this.#definition.localChoices==='function','LOCAL_CHOICES_INVALID');
-      const source=snapshot(projection),data=this.#definition.localData?this.#definition.localData(source):source.data;
-      const value=Values.composeRecord({...source,data});
-      return Values.composeRecord({...value,actions:this.localCommands(value)});
+      const source=snapshot(projection);
+      const data=this.#definition.localData?this.#definition.localData(source):source.data;
+      return data===source.data?source:Values.composeRecord({...source,data});
+    }
+    localProjection(projection) {
+      const view=this.#localViewData(projection);
+      return Values.composeRecord({...view,actions:this.localCommands(view)});
+    }
+    prepareLocalView(projection,inputAllowed) {
+      const view=this.#localViewData(projection);
+      const actions=inputAllowed?this.localCommands(view):[];
+      const result={actions};
+      // The host already owns the authorized projection. Return only the
+      // derived data and commands, with reaction facts in the same order.
+      if(this.#definition.localData)result.data=view.data;
+      if(actions.length&&this.#definition.localReaction){
+        const full=Values.composeRecord({...view,actions});
+        result.reactions=actions.map(command=>this.localReaction(full,command));
+      }
+      return Values.composeRecord(result);
     }
     localReaction(projection, action) {return this.#definition.localReaction?.(snapshot(projection),snapshot(action))??null;}
     // Authority-only extraction. None of the raw position reaches a bot realm.
     botKnowledge(position,actor,kind='action') {
       check(['action','reaction','delay'].includes(kind),'BOT_INPUT_INVALID');
+      // One authority snapshot feeds the projection, choices and both hooks.
+      position=this.#position(position);
       this.validate(position);
       if(!integer(actor,0,position.playerCount-1))return null;
-      return snapshot({projection:this.project(position,actor),actor,
+      return composeValue({projection:this.project(position,actor),actor,
         actions:kind==='action'?this.#choices(position,actor).map(choice=>choice.command):this.reactions(position,actor),
-        memory:this.#definition.observe?.(this.#position(position),actor)||{},
-        context:this.#definition.botContext?.(this.#position(position),actor)||{}});
+        memory:this.#definition.observe?.(position,actor)||{},
+        context:this.#definition.botContext?.(position,actor)||{}});
     }
     botInputs(position,actor,settings,kind='action') {
       const knowledge=this.botKnowledge(position,actor,kind);
       if(!knowledge)return null;
-      return snapshot({...knowledge,kind,settings:settings??null,
+      return composeValue({...knowledge,kind,settings:settings??null,
         decisionRandom:{seed:position.rng??0,key:this.id+':'+(position.revision||0)+':'+actor}});
     }
     // The portable sandbox invokes only this method in a fresh same-source realm.
@@ -287,7 +355,15 @@
       check(result.playerOrder===undefined||Array.isArray(result.playerOrder)&&result.playerOrder.length===position.playerCount&&new Set(result.playerOrder).size===position.playerCount&&result.playerOrder.every(player=>integer(player,0,position.playerCount-1)),'RESULT_INVALID');
       check(result.lastPlayers===undefined||Array.isArray(result.lastPlayers)&&new Set(result.lastPlayers).size===result.lastPlayers.length&&result.lastPlayers.every(player=>integer(player,0,position.playerCount-1)&&!result.winners.includes(player)),'RESULT_INVALID');
       check(result.exits===undefined||Array.isArray(result.exits)&&new Set(result.exits.map(exit=>exit.player)).size===result.exits.length&&result.exits.every(exit=>record(exit)&&integer(exit.player,0,position.playerCount-1)&&['cards','domino','finished'].includes(exit.kind)&&(integer(exit.round,1,Number.MAX_SAFE_INTEGER)||integer(exit.turn,1,Number.MAX_SAFE_INTEGER))),'RESULT_INVALID');
-      return snapshot(result);
+      // Result summaries cross the authority boundary. Keep only the fields
+      // consumed by the common ranking and result screens.
+      const {winners,places,playerOrder,lastPlayers,exits}=result;
+      const metrics=result.metrics.map(({id,values,order,display,maximumFractionDigits})=>({id,values,
+        ...(['asc','desc'].includes(order)?{order}:{}),
+        ...(display==='ranking'?{display}:{}),
+        ...(integer(maximumFractionDigits,0,6)?{maximumFractionDigits}:{})}));
+      return snapshot({winners,places,metrics,...(playerOrder?{playerOrder}:{}),...(lastPlayers?{lastPlayers}:{}),
+        ...(exits?{exits:exits.map(({player,kind,turn,round})=>({player,kind,...(integer(turn,1,Number.MAX_SAFE_INTEGER)?{turn}:{}),...(integer(round,1,Number.MAX_SAFE_INTEGER)?{round}:{})}))}:{})});
     }
   }
   return Object.freeze({GameModel, ModelError, projectEvents});

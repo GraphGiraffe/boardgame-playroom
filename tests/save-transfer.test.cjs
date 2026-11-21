@@ -13,7 +13,20 @@ test('checksum, dependency mismatch, unknown format and missing version fail wit
  const parsed=await T.inspect(text);parsed.dependency.version='9.0.0';parsed.pack=null;await assert.rejects(T.prepare(parsed,{packs,Session,engine:E}),/MISSING/);assert.equal(library.records().length,0);
 });
 test('prepared validation stages exact missing rules without persisting pack and restores active registry on failure',async()=>{
- const {packs,session}=fixture(),bundle=makeBundle();bundle.manifest.version='1.0.1';bundle.files['rules.js']=require('./pack-fixture.cjs').rules({id:'portable-fixture',name:'Portable',version:'1.0.1',min:2,max:2,preset:'base'});const token=packs.prepare(bundle),old=E.get(session.game);assert.throws(()=>packs.validatePrepared(token,()=>{assert.equal(E.get(session.game,'1.0.1').version,'1.0.1');throw Error('invalid save');}),/invalid save/);assert.equal(E.get(session.game),old);assert.throws(()=>E.get(session.game,'1.0.1'));assert.equal(packs.list().length,1);
+ const id='tictactoe',suite=await require('./sdk-installed.cjs').bootstrap({ids:[id]}),packs=suite.manager;
+ const old=E.get(id),bundle=JSON.parse(packs.exportPack(id,old.version));
+ try{
+  const temporaryVersion='999.0.0';
+  bundle.manifest.version=temporaryVersion;
+  const token=packs.prepare(bundle);
+  assert.throws(()=>packs.validatePrepared(token,()=>{
+   assert.equal(E.get(id,temporaryVersion).version,temporaryVersion);
+   throw Error('invalid save');
+  }),/invalid save/);
+  assert.equal(E.get(id),old);
+  assert.throws(()=>E.get(id,temporaryVersion));
+  assert.equal(packs.list().length,1);
+ }finally{E.unregisterVersion(id,old.version);suite.close();}
 });
 test('pack byte conflicts and invalid sessions do not persist dependencies; import failure preserves previous save',async()=>{
  const {packs,session,library,data}=fixture();await library.activateAsync(session,'existing');const before=[...data];const file=JSON.parse(await T.create({session,pack:packs.exportPack(session.game,session.packVersion),Session}));file.dependency.sha256='sha256:'+'0'.repeat(64);await assert.rejects(T.prepare(file,{packs,Session,engine:E}),/CONFLICT/);
@@ -62,11 +75,51 @@ test('library cards distinguish primary human and hotseat guests, including old 
  const UI=require('../core/ui.js');assert.match(UI.helpers.participantIcon(row.participants[0]),/data-participant-role="player"/);assert.doesNotMatch(UI.helpers.participantIcon(row.participants[0]),/<svg/);assert.match(UI.avatar(row.participants[1],1),/data-ui-icon="hand"/);
 });
 
+test('save index agrees with the spectator scene without projecting a playable frame',async()=>{
+ const ids=['ludo','tictactoe'],sdk=await require('./sdk-installed.cjs').bootstrap({ids});
+ const legacyIndex=new Library(null,{project:E.project},Session);
+ const publicIndex=new Library(null,{publicProgress:E.publicProgress,project:()=>assert.fail('save index requested a full frame')},Session);
+ try{
+  for(const [game,preset,count]of [['ludo','teams',4],['tictactoe','classic',2]]){
+   const session=new Session(E,game,{seed:17,preset,players:Array.from({length:count},(_,index)=>({name:'Player '+index}))});
+   for(let i=0;i<3;i++){
+    const before=legacyIndex.summary(session),after=publicIndex.summary(session);
+    assert.deepEqual(after,before);
+    if(game==='ludo')assert(after.round.number>0&&after.participants.every(player=>player.team?.label));
+    const encoded=JSON.parse(publicIndex.encode(session,'checked-index',{roomName:'Renamed table'}));
+    assert.deepEqual(encoded.librarySummary,{...before,roomName:'Renamed table'});
+    assert.deepEqual(Session.restore(E,encoded).states,session.states);
+    const action=E.legalActions(session.current)[0];
+    if(action)session.act(session.current.turn,action);
+   }
+  }
+ }finally{
+  for(const bundle of sdk.bundles)E.unregisterVersion(bundle.manifest.id,bundle.manifest.version);
+  sdk.close();
+ }
+});
+
 
 test('portable sessions retain command journals instead of expanding them to snapshots',async()=>{
  const {session,packs}=fixture();for(let i=0;i<2&&session.current.status==='playing';i++)session.act(session.current.turn,E.legalActions(session.current)[0]);
  const original=JSON.parse(session.serialize());assert.equal(original.version,3);const file=await T.inspect(await T.create({session,pack:packs.exportPack(session.game,session.packVersion),Session}));
  assert.equal(file.payload.version,3);assert.deepEqual(file.payload.actions,original.actions);assert.deepEqual(Session.restore(E,file.payload).states,session.states);assert(!JSON.stringify(file.payload).includes('NEVER-EXPORT'));assert.equal(file.payload.options.lobbyConfig,undefined);
+});
+
+test('portable saves preserve structured settings and strip host room credentials',async()=>{
+ const id='ludo',suite=await require('./sdk-installed.cjs').bootstrap({ids:[id]}),packs=suite.manager;
+ const version=E.get(id).version;
+ try{
+  const session=new Session(E,id,{seed:17,players:[{name:'A'},{name:'B'}],preset:'classic',diceCount:'3',hostPlayer:-1,lobbyConfig:{resumeToken:'NEVER-EXPORT'}});
+  const text=await T.create({session,pack:packs.exportPack(id,version),Session});
+  assert.doesNotMatch(text,/NEVER-EXPORT/);
+  const file=await T.inspect(text);
+  assert.equal(file.payload.options.diceCount,'3');
+  assert.equal(file.payload.options.hostPlayer,-1);
+  assert.equal(file.payload.version,3);
+  const restored=await T.prepare(file,{packs,Session,engine:E});
+  assert.deepEqual(restored.session.states,session.states);
+ }finally{E.unregisterVersion(id,version);suite.close();}
 });
 
 test('legacy snapshot sessions compress without losing any historical state',async()=>{
@@ -75,8 +128,29 @@ test('legacy snapshot sessions compress without losing any historical state',asy
 });
 
 test('collection portable action journals replay exactly after credential stripping',async()=>{
- require('../core/model-registration.js');require('../installed-packs.js');for(const bundle of globalThis.PlayroomInstalledPacks){const id=bundle.manifest.id;require('../packs/'+id+'/rules.js');const game=E.get(id),session=new Session(E,id,{seed:17,mode:'solo',players:Array.from({length:game.min},(_,i)=>({name:'P'+i,bot:true})),lobbyConfig:{resumeToken:'MUST-NOT-EXPORT'}});for(let i=0;i<8&&session.current.status==='playing';i++){const actor=session.current.turn,action=E.botAction(session.current,actor)||E.legalActions(session.current,actor)[0];if(!action)break;session.act(actor,action);}const file=await T.inspect(await T.create({session,pack:JSON.stringify(bundle),Session}));assert.equal(file.payload.version,3,id+' stays an action log');assert.deepEqual(Session.restore(E,file.payload).states,session.states,id+' exact states');assert(!JSON.stringify(file).includes('MUST-NOT-EXPORT'));}
+ const sdk=await require('./sdk-installed.cjs').bootstrap();
+ try{
+  for(const bundle of sdk.bundles){
+   const {id,version}=bundle.manifest,game=E.get(id,version);
+   const session=new Session(E,id,{seed:17,mode:'solo',
+    players:Array.from({length:game.min},(_,i)=>({name:'P'+i,bot:true})),
+    lobbyConfig:{resumeToken:'MUST-NOT-EXPORT'}});
+   for(let i=0;i<8&&session.current.status==='playing';i++){
+    const actor=session.current.turn,action=E.botAction(session.current,actor)||E.legalActions(session.current,actor)[0];
+    if(!action)break;
+    session.act(actor,action);
+   }
+   const file=await T.inspect(await T.create({session,pack:JSON.stringify(bundle),Session}));
+   assert.equal(file.payload.version,3,id+' stays an action log');
+   assert.deepEqual(Session.restore(E,file.payload).states,session.states,id+' exact states');
+   assert(!JSON.stringify(file).includes('MUST-NOT-EXPORT'));
+  }
+ }finally{
+  for(const bundle of sdk.bundles)E.unregisterVersion(bundle.manifest.id,bundle.manifest.version);
+  sdk.close();
+ }
 });
+
 
 test('checkpoint portable capture exports commands without replaying history and validates its normalized result',async()=>{
  const {packs}=fixture(),session=new Session(E,'portable-fixture',{seed:17,mode:'solo',players:[{name:'A'},{name:'B'}]});

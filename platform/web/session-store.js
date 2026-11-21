@@ -8,7 +8,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
   root.PlayroomNetworkSessionStore=api;
 })(typeof globalThis!=='undefined'?globalThis:this,function(Protocol,Recovery){
   'use strict';
-  const DB_NAME='playroom.network-host.v1',DB_VERSION=2;
+  const DB_NAME='playroom.network-host.v1',DB_VERSION=3;
   const isId=value=>typeof value==='string'&&value.length>0&&value.length<=128;
   const clone=value=>JSON.parse(JSON.stringify(value));
   const FORMAT='actions-checkpoint-v1',MAX_BYTES=48*1024*1024;
@@ -44,6 +44,9 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
         request.onupgradeneeded=()=>{
           const database=request.result;
           if(!database.objectStoreNames.contains('sessions'))database.createObjectStore('sessions',{keyPath:'sessionId'});
+          if(!database.objectStoreNames.contains('lobbyHandoffs')){
+            database.createObjectStore('lobbyHandoffs',{keyPath:'roomId'}).createIndex('profileId','profileId');
+          }
           for(const name of ['steps','receipts'])if(!database.objectStoreNames.contains(name)){
             const store=database.createObjectStore(name,{keyPath:name==='steps'?['sessionId','revision']:['sessionId','viewer','commandId']});
             store.createIndex('sessionId','sessionId',{unique:false});
@@ -82,13 +85,53 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       if(!release)throw Error(globalThis.PlayroomMessages.text("ui.session-store.3b131d044fde"));
       return release;
     }
-    async create({sessionId,room,session,recovery=null,packDigest=null}){
+    async create({sessionId,room,session,recovery=null,packDigest=null,lobbyHandoff=null}){
       if(!isId(sessionId)||!isId(room?.id)||session.current.move!==0||room.game?.id!==session.game||room.game.version!==session.packVersion||(packDigest!==null&&!/^sha256:[0-9a-f]{64}$/.test(packDigest)))throw Error('CHECKPOINT_INVALID');
       if(recovery&&(packDigest===null||recovery.version!==1||recovery.room?.id!==room.id||recovery.room.ownerId!==room.ownerId||!Array.isArray(recovery.tokens)))throw Error('CHECKPOINT_INVALID');
       this.engines.set(sessionId,session.engine);
       const timestamp=this.now(),initial=await pack(session.initialSave()),latest=await pack(checkpoint(session.engine,session.current));
       const record={format:'playroom-network-host',version:2,eventStorage:FORMAT,...(session.current.clock!==undefined?{clockEntriesVersion:1,clockTime:session.clockTime}:{}),sessionId,roomId:room.id,game:session.game,packVersion:session.packVersion,packDigest,room:cleanRoom(room),recovery:withoutRoom(recovery),initial,checkpoint:latest,playerBots:session.current.players.map(player=>player.bot),...this.describe(session.current),revision:0,finished:false,createdAt:timestamp,updatedAt:timestamp};
-      await this.transaction(['sessions'],'readwrite',tx=>tx.objectStore('sessions').add(record));return {sessionId,revision:0};
+      const predecessor=session.options?.matchSeries?.series?.lastMatchId;
+      await this.transaction(lobbyHandoff?['sessions','lobbyHandoffs']:['sessions'],'readwrite',(tx,_,abort)=>{
+        const sessions=tx.objectStore('sessions');
+        const createJournal=()=>{
+          if(!predecessor){sessions.add(record);return;}
+          const lookup=sessions.get(predecessor);
+          lookup.onsuccess=()=>{
+            const previous=lookup.result;
+            // A room transferred to another device can carry series progress
+            // without bringing a copy of its predecessor's journal.
+            if(!previous){sessions.add(record);return;}
+            if(!previous.finished||previous.seriesSuccessor||previous.roomId!==room.id||
+              previous.game!==session.game||previous.packVersion!==session.packVersion||previous.packDigest!==packDigest){
+              abort(Error('SERIES_MATCH_OUT_OF_ORDER'));return;
+            }
+            // If hosting returns to this device, the transferred lobby owns
+            // the current resume tokens. A local archive can hold older ones.
+            if(record.recovery&&!previous.seriesHandoff){
+              const credentials=new Map((previous.recovery?.tokens||[]).map(row=>[row.participantId,row]));
+              record.recovery.tokens=record.recovery.tokens.map(row=>credentials.get(row.participantId)||row);
+            }
+            // Reserve the only successor in the same transaction that creates
+            // its initial checkpoint. A failed write leaves the result resumable.
+            sessions.put({...previous,seriesSuccessor:sessionId});
+            sessions.add(record);
+          };
+        };
+        if(!lobbyHandoff){createJournal();return;}
+        // A cold start has one recovery source. Consume the transferred
+        // lobby in the transaction that creates its first match journal.
+        const lobbies=tx.objectStore('lobbyHandoffs'),lookup=lobbies.get(room.id);
+        lookup.onsuccess=()=>{
+          const previous=lookup.result;
+          if(previous?.id!==lobbyHandoff||previous.state!=='committed'||previous.payload.lobby.target!==room.ownerId){
+            abort(Error('HOST_TRANSFER_CONFLICT'));return;
+          }
+          lobbies.delete(room.id);
+          createJournal();
+        };
+      });
+      return {sessionId,revision:0};
     }
     commit(entry){return this.commitBatch({entries:[entry],receipts:[]});}
     async commitBatch({entries,receipts=[]}){
@@ -118,7 +161,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
         const sessions=tx.objectStore('sessions'),lookup=sessions.get(sessionId);
         lookup.onsuccess=()=>{
           const entry=lookup.result,rec=entry?.recovery;
-          if(rec?.version!==1){abort(Error(globalThis.PlayroomMessages.text("ui.session-store.a151568e2b39")));return;}
+          if(rec?.version!==1||entry.seriesSuccessor||entry.seriesHandoff){abort(Error(globalThis.PlayroomMessages.text("ui.session-store.a151568e2b39")));return;}
           const token=rec.tokens.find(t=>t.participantId===participantId);
           if(!token||token.token!==previousToken){abort(Error(globalThis.PlayroomMessages.text("ui.session-store.4ffa670c37de")));return;}
           token.token=nextToken;token.previousToken=previousToken;token.previousExpiresAt=previousExpiresAt;
@@ -208,6 +251,85 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
         }
         store.put(r);
       };});
+    }
+    // Lobby handoff moves the right to start the next match. The finished
+    // journal stays readable on the previous device and keeps its own fence.
+    async fenceLobbyTransfer({sessionId,roomId,transferId,previousHandoff}){
+      if(![roomId,transferId].every(isId)||sessionId&&!isId(sessionId)||previousHandoff&&!isId(previousHandoff))throw Error('HOST_TRANSFER_INVALID');
+      if(!sessionId&&!previousHandoff)return;
+      await this.transaction(previousHandoff?['sessions','lobbyHandoffs']:['sessions'],'readwrite',(tx,_,abort)=>{
+        if(sessionId){
+          const store=tx.objectStore('sessions'),request=store.get(sessionId);
+          request.onsuccess=()=>{
+            const record=request.result;
+            if(!record?.finished||record.roomId!==roomId||record.seriesSuccessor||
+              (record.seriesHandoff&&record.seriesHandoff!==transferId)){
+              abort(Error('HOST_TRANSFER_CONFLICT'));return;
+            }
+            if(!record.seriesHandoff)store.put({...record,seriesHandoff:transferId});
+          };
+        }
+        if(previousHandoff){
+          const store=tx.objectStore('lobbyHandoffs'),request=store.get(roomId);
+          request.onsuccess=()=>{
+            if(request.result?.id!==previousHandoff){abort(Error('HOST_TRANSFER_CONFLICT'));return;}
+            store.delete(roomId);
+          };
+        }
+      });
+    }
+    async stageLobbyHandoff(profileId,payload){
+      const {id,recovery,cloudRoomId}=payload.lobby,roomId=recovery.room.id;
+      if(![id,profileId,roomId].every(isId)||cloudRoomId||!recovery.room.seriesProgress)throw Error('HOST_TRANSFER_INVALID');
+      // Store the immutable pack separately from mutable credentials inside
+      // the record. Updating a token does not encode the pack again.
+      const saved={...payload,pack:new Blob([payload.pack])};
+      await this.transaction(['lobbyHandoffs'],'readwrite',(tx,_,abort)=>{
+        const store=tx.objectStore('lobbyHandoffs'),request=store.get(roomId);
+        request.onsuccess=()=>{
+          if(request.result?.state==='committed'){abort(Error('HOST_TRANSFER_CONFLICT'));return;}
+          store.put({id,roomId,profileId,state:'prepared',payload:saved});
+        };
+      });
+    }
+    async changeLobbyHandoff(roomId,id,change){
+      await this.transaction(['lobbyHandoffs'],'readwrite',(tx,_,abort)=>{
+        const store=tx.objectStore('lobbyHandoffs'),request=store.get(roomId);
+        request.onsuccess=()=>{
+          const record=request.result;
+          if(record?.id!==id){abort(Error('HOST_TRANSFER_CONFLICT'));return;}
+          try{if(change(record))store.put(record);else store.delete(roomId);}catch(error){abort(error);}
+        };
+      });
+    }
+    commitLobbyHandoff(roomId,id){return this.changeLobbyHandoff(roomId,id,record=>{record.state='committed';return true;});}
+    discardLobbyHandoff(roomId,id){return this.changeLobbyHandoff(roomId,id,()=>false);}
+    saveLobbyHandoff(roomId,id,recovery,pack){
+      const asset=pack===undefined?null:new Blob([pack]);
+      return this.changeLobbyHandoff(roomId,id,record=>{
+        const lobby=record.payload.lobby;
+        if(record.state!=='committed'||recovery.room.ownerId!==lobby.target||recovery.room.phase!=='lobby')throw Error('HOST_TRANSFER_CONFLICT');
+        // A token rotation can commit ahead of the in-memory roster update.
+        const tokens=new Map(lobby.recovery.tokens.map(row=>[row.participantId,row]));
+        lobby.recovery={...recovery,tokens:recovery.tokens.map(row=>tokens.get(row.participantId)||row)};
+        if(asset)record.payload.pack=asset;
+        return true;
+      });
+    }
+    rotateLobbyResumeToken(id,{roomId,participantId,previousToken,nextToken,previousExpiresAt}){
+      return this.changeLobbyHandoff(roomId,id,record=>{
+        const token=record.payload.lobby.recovery.tokens.find(row=>row.participantId===participantId);
+        if(record.state!=='committed'||token?.token!==previousToken)throw Error('HOST_TRANSFER_CONFLICT');
+        Object.assign(token,{token:nextToken,previousToken,previousExpiresAt});
+        return true;
+      });
+    }
+    async listLobbyHandoffs(profileId){
+      if(!isId(profileId))return [];
+      return this.transaction(['lobbyHandoffs'],'readonly',(tx,done)=>{
+        const request=tx.objectStore('lobbyHandoffs').index('profileId').getAll(profileId);
+        request.onsuccess=()=>done(request.result.filter(record=>record.state==='committed'));
+      });
     }
     async load(sessionId,engine,Session){this.engines.set(sessionId,engine);return Recovery.restore(await this.readPrivate(sessionId),sessionId,engine,Session);}
 

@@ -37,3 +37,20 @@ test('historical audience checkpoints do not replace the live implicit patch sco
  const old=await host.send({...frame(0,[]),kind:'history',viewer:-1,role:'spectator'});assert.equal((await read(old)).viewer,-1);
  const next=await host.send(frame(2,[event(1),event(2)]));assert.equal(next.mode,'patch');assert(!Object.hasOwn(next,'scope'));assert.equal((await read(next)).viewer,0);
 });
+
+test('signed control updates reuse the full authorized journal for duplicate frames',async()=>{
+ const host=encode(),read=Sync.decoder(),visible=[event(1),event(9)];
+ const send=async value=>P.parse(JSON.stringify(await host.send(value)));
+ const firstPacket=await send(frame(9,visible)),first=await read(firstPacket);
+ const controlPacket=await send(frame(9,visible,{controlRevision:1})),control=await read(controlPacket);
+ assert.notEqual(control.projectionHash,first.projectionHash);
+ assert.deepEqual(control.events,[]);
+ const duplicate=await read(controlPacket);
+ assert.equal(duplicate.eventBase,null);
+ assert.equal(duplicate.events,first.events);
+ const advanced=await send(frame(11,[...visible,event(11)],{controlRevision:1}));
+ await read(advanced);
+ const repeat=await read(advanced);
+ assert.equal(repeat.events[0],first.events[0]);
+ assert.deepEqual(repeat.events,[...visible,event(11)]);
+});

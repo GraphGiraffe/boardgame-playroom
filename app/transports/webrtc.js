@@ -281,6 +281,9 @@ if(typeof require==='function'&&typeof module==='object'&&module.exports)require
     let answerSdp=null,answerFlight=null;
     return {
       pc,channel,previewChannel,pairingId:id,offer:serializeDescription(pc.localDescription,{pairingId:id}),
+      matchesAcceptedAnswer(parsed){
+        return answerSdp!==null&&pc.signalingState==='stable'&&(!parsed.pairingId||parsed.pairingId===id)&&parsed.description.sdp===answerSdp;
+      },
       async acceptAnswer(signal){
         const parsed=parseSignal(signal,'answer');
         if(parsed.pairingId&&parsed.pairingId!==id)throw Error(globalThis.PlayroomMessages.text("ui.webrtc.a6d20424e6f2"));

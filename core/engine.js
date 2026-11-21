@@ -36,24 +36,35 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
   }
   // Presentation metadata stays independent of Web Audio and of game rules.
   // Only new, visible events produce cues; rendering/restoring a snapshot is silent.
-  function projectedEvents(state,viewer,afterEventId=null,{rawEvents=false}={}) {
+  function projectedEvents(state,viewer,afterEventId=null,{rawEvents=false}={},modelFacts=null) {
     const pack=forState(state);
-    return state.events.flatMap(raw=>{
-      if(afterEventId!==null&&!(raw.id>afterEventId))return [];
+    const Events=root.PlayroomEvents||(typeof require==='function'?require('./events.js'):null);
+    const History=root.PlayroomHistory||(typeof require==='function'?require('./history.js'):null);
+    const present=!rawEvents&&History?.owns(state)?pack.eventPresenter?.(state.players):null;
+    const projected=[];
+    for(const raw of state.events){
+      if(afterEventId!==null&&!(raw.id>afterEventId))continue;
       if(raw.visibility){
-        const Events=root.PlayroomEvents||(typeof require==='function'?require('./events.js'):null);
-        return Events.project([raw],viewer,state.players.length).map(value=>rawEvents?value:pack.presentEvent(value,state.players));
+        const fact=Events.projectFact(raw,viewer,state.players.length);
+        if(fact){
+          modelFacts?.push(fact);
+          projected.push(rawEvents?fact:present?present(fact):pack.presentEvent(fact,state.players));
+        }
+        continue;
       }
-      if(raw.privateTo!=null&&!(Array.isArray(raw.privateTo)?raw.privateTo.includes(viewer):raw.privateTo===viewer))
-        return [{id:raw.id,...(raw.revision!==undefined?{revision:raw.revision}:{}),text:raw.publicText||globalThis.PlayroomMessages.text("ui.engine.81ec674a9b53"),player:raw.player,kind:raw.kind,sound:raw.publicSound??null}];
-      const value={...raw};delete value.privateTo;delete value.publicText;delete value.publicSound;
-      return [value];
-    });
+      if(raw.privateTo!=null&&!(Array.isArray(raw.privateTo)?raw.privateTo.includes(viewer):raw.privateTo===viewer)){
+        projected.push({id:raw.id,...(raw.revision!==undefined?{revision:raw.revision}:{}),text:raw.publicText||globalThis.PlayroomMessages.text("ui.engine.81ec674a9b53"),player:raw.player,kind:raw.kind,sound:raw.publicSound??null});
+      }else{
+        const {privateTo,publicText,publicSound,...value}=raw;
+        projected.push(value);
+      }
+    }
+    return projected;
   }
   // Every authored visible effect owns its sound. Only unstructured legacy facts
   // compete for one fallback cue per revision.
   function soundCues(state, viewer, afterEventId = 0) {
-    const Presentation=root.PlayroomNetworkProjection||(typeof require==='function'?require('../presentation/network-projection.js'):null);
+    const Presentation=root.PlayroomTransition||(typeof require==='function'?require('../presentation/transition.js'):null);
     return Presentation.soundCues(projectedEvents(state,viewer,afterEventId),state,viewer);
   }
 
@@ -124,11 +135,12 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     assertState(state.winners === undefined || (state.status === 'finished' && Array.isArray(state.winners) && state.winners.length > 0 && state.winners[0] === state.winner && new Set(state.winners).size === state.winners.length && state.winners.every(i => int(i, 0, state.players.length - 1))), globalThis.PlayroomMessages.text("ui.engine.9622aa5191c5"));
     if(state.result!==undefined){const result=state.result,n=state.players.length;assertState(result.lastPlayers===undefined||Array.isArray(result.lastPlayers)&&new Set(result.lastPlayers).size===result.lastPlayers.length&&result.lastPlayers.every(p=>int(p,0,n-1)), 'RESULT_FINISH_INVALID');assertState(result.exits===undefined||Array.isArray(result.exits)&&new Set(result.exits.map(x=>x?.player)).size===result.exits.length&&result.exits.every(x=>record(x)&&int(x.player,0,n-1)&&['cards','domino','finished'].includes(x.kind)&&(int(x.round,1,Number.MAX_SAFE_INTEGER)||int(x.turn,1,Number.MAX_SAFE_INTEGER))), 'RESULT_FINISH_INVALID');assertState(state.status==='finished'&&record(result)&&typeof result.label==='string'&&result.label.length<=80&&['asc','desc'].includes(result.order)&&Array.isArray(result.values)&&result.values.length===n&&result.values.every(v=>int(v,pack.isolated?Number.MIN_SAFE_INTEGER:0,Number.MAX_SAFE_INTEGER))&&Array.isArray(result.places)&&result.places.length===n&&result.places.every(v=>int(v,1,n)),globalThis.PlayroomMessages.text("ui.engine.8d91204f84a3"));assertState(result.details===undefined||Array.isArray(result.details)&&result.details.length===n&&result.details.every(v=>Number.isFinite(v)&&v>=(pack.isolated?Number.MIN_SAFE_INTEGER:0)&&v<=Number.MAX_SAFE_INTEGER)&&typeof result.detailLabel==='string'&&result.detailLabel.length<=80,globalThis.PlayroomMessages.text("ui.engine.a91603210473"));}
     assertState(record(state.data) && Array.isArray(state.events), globalThis.PlayroomMessages.text("ui.engine.6bb6f415ea1f"));
+    const Events=root.PlayroomEvents||(typeof require==='function'?require('./events.js'):null);
     let last = 0;
     for (const e of state.events) {
       if(e.visibility){
-        const Events=root.PlayroomEvents||(typeof require==='function'?require('./events.js'):null);
-        assertState(record(e)&&int(e.id,last+1,Number.MAX_SAFE_INTEGER)&&int(e.revision,0,state.move),globalThis.PlayroomMessages.text("ui.engine.825b4c18b969"));
+        if(!(record(e)&&int(e.id,last+1,Number.MAX_SAFE_INTEGER)&&int(e.revision,0,state.move)))
+          assertState(false,globalThis.PlayroomMessages.text("ui.engine.825b4c18b969"));
         Events.validate(e,state.players.length);last=e.id;continue;
       }
       assertState(record(e) && int(e.id, last + 1, Number.MAX_SAFE_INTEGER) && typeof e.text === 'string' && typeof e.kind === 'string' && (e.player === null || int(e.player, 0, state.players.length - 1)), globalThis.PlayroomMessages.text("ui.engine.825b4c18b969"));
@@ -169,7 +181,9 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
   }
   function legalActions(state, actor = state.turn) {
     if (!activePlayer(state, actor)) return [];
-    return [...((forState(state).isolated||actor === state.turn || decisionWindow(state)?.participants.includes(actor)) ? forState(state).legal(state, actor) : []), ...reactions(state, actor)];
+    const pack=forState(state);
+    if(pack.isolated&&pack.projectedLegal)return pack.projectedLegal(state,actor);
+    return [...((pack.isolated||actor === state.turn || decisionWindow(state)?.participants.includes(actor)) ? pack.legal(state, actor) : []), ...reactions(state, actor)];
   }
   function availableCommands(state,actor=state.turn){
     if(!activePlayer(state,actor))return [];
@@ -195,9 +209,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
         !int(value.fallbackMs, 0, 60000)) throw Error(globalThis.PlayroomMessages.text("ui.engine.d06c87d09f03"));
     return clone({id:value.id,owner:value.owner,revision:value.revision,humanMs:value.humanMs,botMs:value.botMs,fallbackMs:value.fallbackMs});
   }
-  function reactionControl(state, actor, action) {
-    if (!activePlayer(state, actor) || !action || typeof action !== 'object') return null;
-    const value = forState(state).reactionControl?.(state, actor, action);
+  function checkedReactionControl(value) {
     if (value == null) return null;
     if (!value || !['answer','challenge','advance','independent'].includes(value.kind) ||
         (value.ignore !== undefined && typeof value.ignore !== 'boolean') ||
@@ -205,42 +217,82 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
         (value.episode !== undefined && (!Number.isSafeInteger(value.episode) || value.episode < 0))) throw Error(globalThis.PlayroomMessages.text("ui.engine.da9ca6755a24"));
     return clone(value);
   }
+  function reactionControl(state, actor, action) {
+    if (!activePlayer(state, actor) || !action || typeof action !== 'object') return null;
+    return checkedReactionControl(forState(state).reactionControl?.(state, actor, action));
+  }
+  function reactionControls(state,actor,actions) {
+    if(!actions.length)return [];
+    const pack=activePlayer(state,actor)?forState(state):null;
+    if(!pack)return actions.map(()=>null);
+    if(actions.length===1||!pack.reactionControls||!actions.every(action=>action&&typeof action==='object'))
+      return actions.map(action=>reactionControl(state,actor,action));
+    return pack.reactionControls(state,actor,actions).map(checkedReactionControl);
+  }
   function applyAction(state, actor, action) {
     if (!action || typeof action !== 'object') throw Error(globalThis.PlayroomMessages.text("ui.engine.f8ee9d2e73da"));
-    if (reactionControl(state, actor, action)?.ignore) return state;
+    const control=reactionControl(state,actor,action);
+    if (control?.ignore) return state;
     const pack=forState(state);
-    const legal=pack.resolveAction?(activePlayer(state,actor)?pack.resolveAction(state,actor,action):null):
+    const legal=pack.resolveAction?(activePlayer(state,actor)?pack.resolveAction(state,actor,action,control):null):
       legalActions(state, actor).find(candidate => Object.keys(candidate).filter(k => !['label', 'notify', 'confirmation', 'targetPrompt', 'targetKind'].includes(k)).every(k => (k === 'episode' && action[k] === undefined) || JSON.stringify(candidate[k]) === JSON.stringify(action[k])));
     if (!legal) throw Error(globalThis.PlayroomMessages.text("ui.engine.a5bdf3185a7d"));
-    // Canonical facts are immutable snapshots, not mutable game positions.
-    // Preserve them across moves instead of cloning the growing journal.
-    // Legacy unstructured events keep their detached mutable copy.
-    const Values = root.PlayroomModelValues || require('./model-values.js');
     // A portable model reads an immutable position and replaces data atomically.
     // Cloning its old data here would be discarded immediately by the adapter.
-    const next = pack.modelContractVersion===1&&pack.model
-      ? {...clone({...state,data:null,events:[]}),data:state.data}
+    const portable=pack.modelContractVersion===1&&pack.model;
+    const next = portable
+      ? {...clone({...state,data:null,events:[],timeline:null}),data:state.data,timeline:state.timeline}
       : clone({...state,events:[]});
-    next.events = state.events.map(value=>value.visibility?Values.snapshot(value):clone(value));
+    const History=root.PlayroomHistory||(typeof require==='function'?require('./history.js'):null);
+    const Values=root.PlayroomModelValues||(typeof require==='function'?require('./model-values.js'):null);
+    // Portable transitions append to the verified journal without borrowing
+    // write access. Standalone callers retain an independent mutable list.
+    next.events=portable&&History?.owns(state)?state.events:
+      state.events.map(value=>value.visibility?Values.snapshot(value):clone(value));
     next.move++;
-    forState(next).apply(next, actor, legal);
+    if(portable)pack.apply(next,actor,legal,state);
+    else pack.apply(next,actor,legal);
     return next;
   }
-  function project(state, viewer, options={}) {
+  function projectionHeader(state,viewer,pack,options){
     // Private data and events are projected below. Do not copy their complete
     // authority payload only to discard it, and never copy the private RNG.
     const {data,events,rng,...header}=state;
-    const out = {...clone(header),data:{}}, pack = forState(state);
+    const History=root.PlayroomHistory||(typeof require==='function'?require('./history.js'):null);
+    const portable=pack.modelContractVersion===1&&pack.model;
+    const timeline=portable&&History?.owns(state)?state.timeline:null;
+    const out={...clone(timeline?{...header,timeline:null}:header),data:{}};
+    if(timeline)out.timeline=timeline;
+    // Collect model facts during the same ordered authorization pass that
+    // feeds the display log. Legacy entries belong only to the display log.
+    const facts=portable&&!options.omitModelEvents?[]:null;
+    out.events=projectedEvents(state,viewer,null,options,facts);
+    return {out,facts};
+  }
+  function project(state, viewer, options={}) {
     if (!Number.isInteger(viewer) || viewer < 0 || viewer >= state.players.length) viewer = -1;
-    out.events = projectedEvents(state,viewer,null,options);
-    if (pack.project) pack.project(out, viewer, state,options);
+    const pack=forState(state),{out,facts}=projectionHeader(state,viewer,pack,options);
+    if (pack.project) pack.project(out,viewer,state,options,facts);
     return out;
   }
+  function publicProgress(state) {
+    const pack=forState(state);
+    if(pack.publicProgress)return pack.publicProgress(state);
+    const scene=project(state,-1).scene;
+    return {round:scene?.round||null,players:scene?.players?.filter(person=>person.team)
+      .map(person=>({player:person.player,team:person.team}))||[]};
+  }
   function projectTable(state, actor, options={}) {
-    const out = project(state, -1,options), projection = forState(state).tableProjection?.(state, actor, options);
+    const pack=forState(state);
+    if(pack.projectTable){
+      const {out,facts}=projectionHeader(state,-1,pack,options);
+      pack.projectTable(out,actor,state,options,facts);
+      return out;
+    }
+    const out = project(state, -1,options), projection = pack.tableProjection?.(state, actor, options);
     out.tableActor = projection?.actor ?? -1;
-    out.tableActions = options.rawEvents?[]:forState(state).tableChoices?.(state,actor) ?? projection?.actions ?? [];
-    if (projection) {out.modelProjection = projection;if(!options.rawEvents)out.scene=forState(state).scene(projection,state.players);}
+    out.tableActions = options.rawEvents?[]:pack.tableChoices?.(state,actor) ?? projection?.actions ?? [];
+    if (projection) {out.modelProjection = projection;if(!options.rawEvents)out.scene=pack.scene(projection,state.players);}
     return out;
   }
   function tableCommand(state, actor, action) {
@@ -292,8 +344,8 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     return out;
   }
   function inputChoices(state,actor=state.turn){return activePlayer(state,actor)?forState(state).inputs?.(state,actor)||[]:[];}
-  function advanceClock(state,now){if(!Number.isSafeInteger(now)||now<0||now<(state.clock??0))throw Error('CLOCK_INVALID');return forState(state).advance?.(state,now)||state;}
-  const api = { inputChoices,advanceClock,storageState:state=>forState(state).storageState?.(state)??state, registerModel, register, registerVersion, activatePack, unregisterVersion, get, createGame, legalActions, availableCommands, decisionWindow, reactions, reactionWindow, reactionWindows, reactionControl, applyAction, applyTableAction, tableCommand, project, projectTable, botAction, botReaction, botReactionDelay:(state,actor)=>forState(state).botReactionDelay?.(state,actor)??null, checkpoint:(before,next,actor,command)=>forState(before).checkpoint?.(before,next,actor,command)??true, validateState, assertState, validateComponents, shuffle, rollDie, random, clone, hidden, event, finish, complete, soundCues, createZone, moveComponent, reveal, projectZones };
+  function advanceClock(state,now,control){if(!Number.isSafeInteger(now)||now<0||now<(state.clock??0))throw Error('CLOCK_INVALID');const pack=forState(state);if(control!==undefined&&!pack.clockActions)throw Error('CLOCK_ACTION_UNAVAILABLE');return pack.advance?.(state,now,control)||state;}
+  const api = { inputChoices,advanceClock,storageState:state=>forState(state).storageState?.(state)??state, registerModel, register, registerVersion, activatePack, unregisterVersion, get, publicProgress, createGame, legalActions, availableCommands, decisionWindow, reactions, reactionWindow, reactionWindows, reactionControl, reactionControls, applyAction, applyTableAction, tableCommand, project, projectTable, botAction, botReaction, botReactionDelay:(state,actor)=>forState(state).botReactionDelay?.(state,actor)??null, checkpoint:(before,next,actor,command)=>forState(before).checkpoint?.(before,next,actor,command)??true, validateState, assertState, validateComponents, shuffle, rollDie, random, clone, hidden, event, finish, complete, soundCues, createZone, moveComponent, reveal, projectZones };
   Object.defineProperty(api, 'GAMES', { enumerable: true, get: () => clone([...registry.values()].map(({ id, version, stateVersion, name, min, max, description, rules, rulebook, presets, scoreLabel, botSettings, capabilities }) => ({ id, version, stateVersion, name, min, max, description, rules, ...(rulebook?{rulebook}:{}), presets, scoreLabel, ...(botSettings?{botSettings}:{}),...(capabilities?{capabilities}:{}) }))) });
   root.TabletopCore = root.PlayroomEngine = api;
   if (typeof module !== 'undefined') module.exports = api;

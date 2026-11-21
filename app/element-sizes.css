@@ -1,14 +1,14 @@
 /* Game-piece standards; menu/dialog composition is the0.18.3 baseline. */
 :root{--size-card:50px;--size-card-height:70px;--size-die:40px;--size-domino:32px;--size-token:24px;--size-avatar:40px;--size-control:44px}
 #app .layout-field :is(.shared-card,.shared-card-slot):not(.solitaire-card):not(.solitaire-empty){width:var(--size-card);height:var(--size-card-height)}
-#app .layout-field .pexeso-grid :is(.shared-card,.shared-card-slot){width:var(--grid-card-width);height:calc(var(--grid-card-width) * 1.4)}
+/* Fitted card grids own their slot width independently of ordinary table cards. */
+#app .layout-field [data-card-count] :is(.shared-card,.shared-card-slot){width:var(--grid-card-width);height:calc(var(--grid-card-width) * 1.4)}
 #app :is(.shared-die,.die){width:var(--size-die);height:var(--size-die);min-width:0;min-height:0}
-
 #app .layout-field .shared-card:not(.solitaire-card){width:var(--size-card)!important;min-width:0!important;height:var(--size-card-height)!important;min-height:0!important}
-#app .layout-field .pexeso-grid .shared-card{width:var(--grid-card-width)!important;height:calc(var(--grid-card-width) * 1.4)!important}
+#app .layout-field [data-card-count] .shared-card{width:var(--grid-card-width)!important;height:calc(var(--grid-card-width) * 1.4)!important}
 #app .app-game-layout .layout-hand .hand-card{width:var(--scene-card-width)!important;min-width:var(--scene-card-width)!important;height:var(--scene-card-height)!important}
 #app .layout-field [data-size-role="card"]{width:var(--size-card)!important;height:var(--size-card-height)!important;min-width:0!important;min-height:0!important}
-#app .layout-field .pexeso-grid [data-size-role="card"]{width:var(--grid-card-width)!important;height:calc(var(--grid-card-width) * 1.4)!important}
+#app .layout-field [data-card-count] [data-size-role="card"]{width:var(--grid-card-width)!important;height:calc(var(--grid-card-width) * 1.4)!important}
 body{min-width:min(320px,100%);font-size:var(--size-type-16_0,1rem)}
 #app .app-shell,:is(#modal-root,[data-ui-surface-exit]),#avatar-picker-root,.appearance-dialog{font-size:1rem}
 /* Keep two phone columns; wider libraries add tracks before enlarging tiles. */
@@ -30,43 +30,31 @@ body{min-width:min(320px,100%);font-size:var(--size-type-16_0,1rem)}
 /* Optical centering correction only; retain release control dimensions. */
 :is(#app,:is(#modal-root,[data-ui-surface-exit]),#avatar-picker-root,.appearance-dialog) :is(.icon-btn,.ui-icon-button){display:inline-flex;align-items:center;justify-content:center;line-height:1}
 :is(#app,:is(#modal-root,[data-ui-surface-exit]),#avatar-picker-root,.appearance-dialog) :is(.icon-btn,.ui-icon-button)>svg{display:block;flex:none;margin:0;max-width:100%;max-height:100%}
-
 /* Roomy board controls share a semantic size; five-dice hands keep their own role. */
 #app [data-size-role="board-dice"] :is(.shared-die,.die){width:var(--size-board-die);height:var(--size-board-die);max-width:none;max-height:none}
 /* Replay keeps public dice while omitting a duplicated self card and play commands. */
 #app .scene.replaying .layout-actions:has([data-size-role="board-dice"]):not(:has([data-view-preference])){display:flex!important;pointer-events:none}
 #app .scene.replaying .app-game-layout[data-has-hand="false"]:has([data-seat-copy="true"])>.layout-self:has([data-size-role="board-dice"])>.player-panel{display:none!important}
-
 /* The table heading shares two lines between the title and optional mode. */
 #app .table-title{flex:1;min-width:0;overflow:hidden}
 #app .table-title [data-game-title],.lobby-game-line [data-game-title]{display:block;min-width:0;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;line-height:1.2}
 #app .table-title p{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-
 .lobby-game-line [data-game-title]{flex:1;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;white-space:normal;overflow-wrap:anywhere;max-height:2.4em}
 .lobby-game-line .lobby-tools{flex:none}
-
 #app .table-tools [data-command=fullscreen]{display:inline-flex}
 /* Content field has no scrolling interaction; keep all card layers at one size. */
-
-
-
-
-
 /* Counter art includes a lower rim/shadow; leave room inside the scrolling row. */
-
 #app .app-game-layout[data-opponent-hands="false"] .player-panel.opponent-hand{min-height:0;justify-content:flex-start}
-
-
+/* A public hand count can survive while faces are hidden. Preserve the normal
+   portrait roster height without mounting a hand or enabling its controls. */
+@media(orientation:portrait){
+ #app .app-game-layout[data-opponent-hands="false"] .player-panel.opponent-hand[data-hand-count]:not([data-hand-count="0"]){min-height:50px}
+}
 @media(orientation:landscape) and (min-width:600px){
  #app .table-shell{--right-side-width:var(--side-width)}
-
-
-
  #app .table-status .turn-extra,#app .table-status .status-event{width:calc(var(--right-side-width) - 18px);text-align:left}
  #app .table-status .turn-label{left:14px}
-
 }
-
 #app .app-game-layout .player-panel.is-inactive{background:color-mix(in srgb,var(--paper,#f4f2e8) 60%,#a5aaa5);border-color:#a5aaa5}
 #app .app-game-layout .own-hand[data-hand-count="0"] .hand-track{overflow:hidden!important;min-height:0!important;height:auto!important}
 @media(orientation:landscape) and (min-width:600px){
@@ -74,50 +62,28 @@ body{min-width:min(320px,100%);font-size:var(--size-type-16_0,1rem)}
 }
 #app .resume-actions .resume-primary{background:var(--color-action-primary,#356951);border-color:var(--color-action-primary,#356951);color:var(--color-action-on-primary,#fffef8)}
 @media(orientation:landscape) and (min-width:600px){
-
 }
-
 /* Hand pieces retain the readable release scale independently of field pieces. */
-
-
 /* Book summaries are a table, not a coloured card-play surface. */
-#app .gofish-scene>.layout-field{background:transparent}
+#app :is(.gofish-scene>.layout-field,.layout-field:has(.sdk-collected-sets)){background:transparent}
 #app .gofish-scene .gofish-book-cards .shared-card{width:24px!important;height:34px!important;min-width:24px!important;min-height:34px!important;flex-shrink:0}
-
 /* Compact player headers share one spacing policy across every pack. */
-
-
-
-
 #app .app-game-layout .player-panel .player-hand{margin-top:0;gap:0}
 #app .app-game-layout .player-panel .player-hand .mini-hand{padding-top:0!important}
-
 #app .app-game-layout .player-panel .player-heading{padding-right:0;}
 #app .app-game-layout .player-panel .player-turn-position{margin-left:auto;}
-
 #app .app-game-layout .layout-actions>.game-action-bar{height:100%;align-self:stretch}
-.player-target-menu.is-panel-overlay{box-sizing:border-box;max-width:none;min-width:0;max-height:none;overflow:auto;justify-content:center;box-shadow:none}
-.player-target-menu.is-panel-overlay>.scene-button{min-width:0;width:100%;flex-shrink:0;padding-inline:4px;overflow-wrap:anywhere}
 /* Narrow player cards keep the name and order together above avatar/counters. */
-
-
-
-
-
-
 /* Paint each overlapping card as a single opaque layer, including SVG artboards. */
 #app .app-game-layout .hand-track.is-fan .hand-card{isolation:isolate;contain:paint}
 #app .app-game-layout .game-action-bar .ui-button--game{border-radius:12px;background:var(--color-surface-raised,#e6e9dc);color:var(--color-text-primary,#263c36);border:1px solid var(--color-border-subtle,#bac9a6);box-shadow:0 3px 0 #d4d9c6}
-
 /* Fixed quick-action slots shared by the library and game header. */
 #app :is(.topbar-tools,.table-tools){display:flex;gap:4px;flex:none;margin-left:auto;}
 #app :is(.topbar-tools,.table-tools)>.icon-btn{display:inline-flex!important;width:44px!important;height:44px!important;min-width:44px!important;align-items:center;justify-content:center;}
 :is(#modal-root,[data-ui-surface-exit]) .modal-head>[data-command="reset-rules"]{margin-left:auto;flex:none;}
 @media(max-width:760px) and (orientation:portrait){#app .hub-main>.topbar{height:44px;min-height:44px;margin-top:-4px;margin-right:-4px;}}
-
 :is(#modal-root,[data-ui-surface-exit]) .modal-head>[data-command="reset-rules"]{order:1;}
 :is(#modal-root,[data-ui-surface-exit]) .modal:not([data-ui-surface])>[data-fixed-footer]{flex:none;margin:12px 10px 10px;width:auto!important;}
-
 /* The sidebar uses a vertical, equal-size page selector. */
 @media(min-width:761px),(orientation:landscape){
  #app .hub-page-tabs{grid-template-columns:minmax(0,1fr);grid-template-rows:repeat(2,minmax(44px,1fr));}
@@ -129,37 +95,24 @@ body{min-width:min(320px,100%);font-size:var(--size-type-16_0,1rem)}
 .bot-settings-fields{border:0;padding:0;margin:0;min-width:0}.bot-strategies{display:grid;gap:8px;margin-block:12px 20px}.bot-strategy{display:flex;align-items:center;gap:10px;padding:10px;border:1px solid var(--line);border-radius:14px}.bot-strategy span{display:grid;gap:3px}.bot-strategy small{color:var(--muted);font-size:.85em}.bot-settings-footer{display:flex;gap:10px}.bot-settings-footer .btn{flex:1}.bot-strategy-label{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.bot-settings-fields input[type=range]{width:100%}
 .public-sequence{height:100%;width:100%;display:flex;flex-direction:column;min-height:0}.public-sequence-stage{flex:1;min-height:0;position:relative}.public-sequence-stage>[data-public-frame]{height:100%;width:100%}.public-sequence-stage>[hidden]{display:none!important}.public-sequence-controls{display:flex;gap:5px;align-items:center;justify-content:center;flex:none;font-size:12px;padding:4px}.public-sequence-controls output{flex:1;text-align:center}.public-sequence-controls .scene-button{padding:4px 8px;min-height:32px}
 input[type=range].is-high-error-rate{accent-color:var(--color-feedback-error,#b94f40);--range-color:var(--color-feedback-error,#b94f40);--range-fill:var(--color-feedback-error,#b94f40)}output.is-high-error-rate{color:var(--color-feedback-error,#b94f40)}
-
 /* Square card hands retain the shared player-panel layout. */
 .app-game-layout .layout-hand .hand-track:has([data-card-shape="square"]){height:auto!important;min-height:0!important;padding:var(--square-hand-padding,6px)!important;flex-wrap:wrap;gap:6px;justify-content:safe center;overflow:visible}
-
 /* Optional token presentation in the standard player score area. */
 .player-score.is-token-counter{display:inline-flex!important;align-items:center;gap:1px;background:transparent;padding:0;min-width:0;box-shadow:none;border:0}
 .player-score .counter-token{width:13px;height:15px;flex:none;fill:currentColor;stroke:currentColor;stroke-width:1;stroke-linejoin:round}
 .player-score .counter-token.is-empty{fill:none;opacity:.25}.token-heart{color:var(--color-side-red,#ce735d)}.token-meeple{color:var(--color-side-blue,#668fad)}.token-crown{color:var(--color-side-yellow,#cfac4c)}
 .player-avatar-wrap[data-decision-player]{cursor:pointer;}
-
 .app-game-layout.is-public-playback .layout-hand,.app-game-layout.is-public-playback .layout-actions{visibility:hidden;pointer-events:none}
-
 /* Card shape belongs to the shared card type, including the hand fitter. */
 #app .app-game-layout .layout-hand .hand-card[data-card-shape="square"]{height:var(--scene-card-width)!important;aspect-ratio:1}
-
 #app .public-sequence-controls{height:32px;min-height:32px;padding:0;gap:4px}#app .public-sequence-controls .scene-button{height:32px;min-height:32px;padding:4px 6px;line-height:1.1;white-space:nowrap}
-
 .app-game-layout .own-hand:has([data-card-shape="square"]){max-width:none;width:100%;padding:0;margin:0}
-
 .app-game-layout .hand-track:has([data-card-shape="square"])::before,.app-game-layout .hand-track:has([data-card-shape="square"])::after{content:none}
-
 .player-panel:is(.is-turn,.is-ready){--counter-token-empty-fill:var(--color-surface-turn,#dfedcb)}
-
 /* Optional compact counters share the name row without expanding its height. */
-
 #app .app-game-layout .player-heading:has(.player-heading-counters)>strong{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
-
 #app .app-game-layout .player-heading-counters .player-score{font-size:11px;}
-
 #app .app-game-layout .player-heading-counters .is-overlapping .counter-token+.counter-token{margin-left:calc(11px * -.54);}
-
 /* Games can request a wider local hand lane through the shared layout contract. */
 @media(orientation:landscape) and (min-width:600px){
  #app .table-shell:has(.app-game-layout[data-wide-hand="true"]){--side-width:max(22%,150px)}
@@ -167,10 +120,8 @@ input[type=range].is-high-error-rate{accent-color:var(--color-feedback-error,#b9
  #app .app-game-layout[data-wide-hand="true"]>.layout-field{padding-inline:0}
  #app .table-shell:has(.app-game-layout[data-wide-hand="true"]) .table-tools{width:calc(30% - 8px)}
 }
-
 #app .table-title [data-game-title]{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;white-space:normal;overflow-wrap:normal;word-break:normal;max-height:2.4em}
 #app .table-title.has-wrapped-title p{display:none}
-
 /* Quick actions follow available shell width after interface zoom. */
 :where(:root[data-ui-compact="true"]) #app :is(.topbar-tools,.table-tools)>.icon-btn{width:32px!important;min-width:32px!important;height:32px!important;min-height:32px!important;border-radius:50%;padding:6px}
 :where(:root[data-ui-compact="true"]) :is(#app,:is(#modal-root,[data-ui-surface-exit])) :is(.topbar-tools,.lobby-tools,.lobby-primary,.slot-edit,.rulebook-toolbar){gap:4px}

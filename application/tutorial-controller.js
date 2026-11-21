@@ -23,12 +23,21 @@
    if(saved&&!saved.enabled){progress.epoch=saved.epoch;progress.checkpoint=undefined;return null;}
    if(saved){if(progress.epoch!==saved.epoch||progress.scope!==saved.scope){progress.started=false;progress.done=false;progress.checkpoint=undefined;}progress.epoch=saved.epoch;progress.scope=saved.scope;progress.mastered=saved.mastered;}
    if(this.#pending.has(state.game)&&state.status==='playing'&&!state.players[viewer]?.bot){this.#pending.delete(state.game);Object.assign(progress,{started:false,done:false,phase:null,manual:true,epoch:(progress.epoch||0)+1,checkpoint:undefined});progress.seen.clear();}
-   let guide=typeof definition==='function'?definition({...context,guideProgress:{seen:[...progress.seen],checkpoint:progress.checkpoint}}):definition;
+   const seen=[...progress.seen];
+   const lesson=seen=>definition({...context,guideProgress:{seen,checkpoint:progress.checkpoint}});
+   let guide=typeof definition==='function'?lesson(seen):definition;
    if(!guide)return null;
    if(saved){
     const revisions={...(definition?.revisions||{}),...(guide.revisions||{})};for(const step of guide.completion||guide.steps||[])if(step.revision!=null)revisions[step.id]=step.revision;
-    progress.revisions=revisions;progress.seen=new Set(Object.keys(saved.mastered).filter(id=>saved.mastered[id]===(revisions[id]??1)));
-    if(typeof definition==='function')guide=definition({...context,guideProgress:{seen:[...progress.seen],checkpoint:progress.checkpoint}});
+    const mastered=Object.keys(saved.mastered).filter(id=>saved.mastered[id]===(revisions[id]??1));
+    progress.revisions=revisions;
+    // A guest can declare dynamic goal revisions. Re-evaluate its lesson
+    // only when the saved mastery changes the input it just received.
+    if(mastered.length!==seen.length||mastered.some((id,index)=>id!==seen[index])){
+     progress.seen=new Set(mastered);
+     if(typeof definition==='function')guide=lesson(mastered);
+     if(!guide)return null;
+    }
    }
    const ownTurn=guide.concurrent||state.turn===viewer||state.players.length===1;
    progress.phase=guide.phase||'turn';progress.ownTurn=ownTurn;
@@ -44,8 +53,10 @@
    return {guide,progress:this.#snapshot(progress)};
   }
   #save(context,progress,ids){if(this.#store&&ids.length)this.#store.learn(context.state.game,Object.fromEntries(ids.map(id=>[id,progress.revisions?.[id]??1])),progress);}
-  interact(ids){const c=this.#current;if(!c||!c.progress.ownTurn||c.active===false||c.busy||c.progress.done)return;
-   for(const step of c.guide.steps||[])if(step.available!==false&&ids.includes(step.id)&&(step.interaction||!step.actions&&!step.match)){c.progress.seen.add(step.id);this.#save(c,c.progress,[step.id]);}
+  interact(ids){const c=this.#current;if(!c||!c.progress.ownTurn||c.active===false||c.busy||c.progress.done)return false;
+   let learned=false;
+   for(const step of c.guide.steps||[])if(step.available!==false&&ids.includes(step.id)&&!c.progress.seen.has(step.id)&&(step.interaction||!step.actions&&!step.match)){c.progress.seen.add(step.id);this.#save(c,c.progress,[step.id]);learned=true;}
+   return learned;
   }
   capture(owner,viewer){
    const c=this.#current;if(c?.owner!==owner||c.viewer!==viewer||!c.progress.ownTurn)return null;

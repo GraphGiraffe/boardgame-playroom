@@ -2,6 +2,28 @@
 const {test}=require('node:test'),assert=require('node:assert/strict');
 const Client=require('../app/session-client.js');
 const frame=(revision,extra={})=>({protocolVersion:3,kind:'snapshot',sessionId:'s',authorityEpoch:'e',game:'uno',packVersion:'1',viewer:0,role:'player',revision,historyLength:revision+1,state:{move:revision,game:'uno',packVersion:'1',scene:{players:[]}},events:[{id:revision,text:'seen '+revision}],actions:[{type:'play'}],...extra});
+test('live frames with old revisions or foreign scope never reach the presentation port',()=>{
+ const restored=[],effects=[];
+ const client=new Client({},{restoreFrame:raw=>{restored.push(raw);return raw;},onEffect:effect=>effects.push(effect)});
+ try{
+  const current=frame(5,{controlRevision:3,reactionRevision:4,rosterRevision:2});
+  assert(client.accept(current));
+  for(const raw of [
+   frame(4,{controlRevision:3,reactionRevision:4,rosterRevision:2}),
+   {...current,controlRevision:2,reactionRevision:5},
+   {...current,rosterRevision:1,reactionRevision:5},
+   {...current,reactionRevision:3},
+   {...current,viewer:1}, {...current,role:'table'}, {...current,packVersion:'2'},
+  ])assert.equal(client.accept(raw),false);
+  assert.throws(()=>client.accept({...current,authorityEpoch:'next',revision:6}));
+  assert.equal(client.snapshot.revision,5);
+  const fresh={...current,reactionRevision:5,cues:[{eventId:6,id:'turn'}]};
+  assert(client.accept(fresh));
+  assert.equal(client.accept({...fresh}),false);
+  assert.deepEqual(restored,[current,fresh]);
+  assert.equal(effects.length,1);
+ }finally{client.close();}
+});
 test('first received frame stays local and the current live revision survives cache eviction',async()=>{
  let calls=0;const client=new Client({history:async i=>{calls++;return frame(i);}},{historyBudget:1});
  client.accept(frame(4));const first=client.snapshot;
@@ -18,6 +40,41 @@ test('received frames replay locally with stable state references and no extra h
  for(let pass=0;pass<3;pass++)for(let i=0;i<5;i++){const old=await client.history(i);assert.equal(old.kind,'history');assert.equal(old.revision,i);assert.deepEqual(old.actions,[]);assert(Object.isFrozen(old.state));}
  assert.equal((await client.history(4)).state,live.state);assert.equal(calls,0);assert.equal(client.snapshot,live);
 });
+test('history counts shared scene and event bytes once across control-only updates',async t=>{
+ const P=require('../core/protocol.js'),encode=TextEncoder.prototype.encode;
+ const encoded={scene:0,event:0};
+ t.mock.method(TextEncoder.prototype,'encode',function(value){
+  if(value?.includes('scene-payload-🎲'))encoded.scene++;
+  if(value?.includes('event-payload-🏆'))encoded.event++;
+  return encode.call(this,value);
+ });
+ const current=frame(0),events=P.immutable([{id:1,revision:0,text:'event-payload-🏆'}]);
+ const scene=P.immutable({...current.state.scene,label:'scene-payload-🎲'});
+ const state=P.composeRecord({...current.state,scene,events});
+ const client=new Client({});
+ try{
+  function accept(revision,paused,board,journal=events){
+   assert(client.accept(P.composeRecord({...current,controlRevision:revision,paused,state:board,events:journal})));
+  }
+  accept(0,false,state);
+  accept(1,true,state);
+  const paused=await client.history(0);
+  assert.equal(paused.controlRevision,1);
+  assert.equal(paused.state.scene,scene);
+  assert.deepEqual(encoded,{scene:1,event:1},'repeat frames reuse the exact sizes of their immutable payloads');
+  assert.equal(client.historyBytes,Buffer.byteLength(JSON.stringify(paused)));
+  const changed=P.composeRecord({...state,scene:P.immutable({...scene,label:'scene-payload-🎲 after update'})});
+  accept(2,false,changed);
+  const after=await client.history(0);
+  assert.equal(after.state.scene,changed.scene);
+  assert.deepEqual(encoded,{scene:2,event:1});
+  assert.equal(client.historyBytes,Buffer.byteLength(JSON.stringify(after)));
+  const journal=P.composeArray([...events,{id:2,revision:0,text:'event-payload-🏆 new'}]);
+  accept(3,true,P.composeRecord({...changed,events:journal}),journal);
+  assert.deepEqual(encoded,{scene:2,event:2},'adding an event encodes only the new row');
+  assert.equal(client.historyBytes,Buffer.byteLength(JSON.stringify(await client.history(0))));
+ }finally{client.close();}
+});
 test('persistent history survives a new client, reads once and has no network/write on cache hit',async()=>{
  let reads=0,writes=0;const saved=frame(1);delete saved.role;
  const client=new Client({history(){throw Error('offline');}},{readHistory:async()=>{reads++;return saved;},writeHistory:()=>writes++});client.accept(frame(3));
@@ -30,7 +87,15 @@ test('a missing frame is fetched once for concurrent readers and persisted once'
 });
 test('disk scope mismatches never enter the cache; a valid host projection replaces them',async()=>{
  for(const extra of [{viewer:1},{role:'table'},{sessionId:'other'},{authorityEpoch:'other'},{packVersion:'2'}]){
- let calls=0;const client=new Client({history:async i=>{calls++;return frame(i,{kind:'history'});}},{readHistory:async()=>frame(1,extra)});client.accept(frame(3));assert.equal((await client.history(1)).viewer,0);assert.equal(calls,1);
+ const foreign=frame(1,extra),restored=[];
+ let calls=0;const client=new Client({history:async i=>{calls++;return frame(i,{kind:'history',state:{}});}},{
+  readHistory:async()=>foreign,restoreFrame:raw=>{restored.push(raw);return {...raw,state:{...raw.state,move:raw.revision}};}
+ });
+ try{
+  client.accept(frame(3));assert.equal((await client.history(1)).viewer,0);assert.equal(calls,1);
+  assert.equal(restored.includes(foreign),false);
+  assert.equal(restored.length,2,'only live and valid compact history frames are restored');
+ }finally{client.close();}
  }
 });
 test('invalid remote frames are rejected, failures can retry, and close discards pending results',async()=>{
@@ -57,7 +122,9 @@ test('history ranges combine only missing runs, validate scope and persist each 
 });
 test('oversized range frames use single-frame fallback and foreign audience is rejected',async()=>{
  let singles=0;const client=new Client({historyRange:async start=>({frames:[],next:start,oversized:start}),history:async i=>{singles++;return frame(i);}});client.accept(frame(2));await client.historyRange(0,2);assert.equal(singles,2);client.close();
- const bad=new Client({historyRange:async start=>({frames:[frame(start,{kind:'history',viewer:1})],next:start+1})});bad.accept(frame(2));await assert.rejects(bad.historyRange(0,1),/HISTORY_FRAME_INVALID/);bad.close();
+ let restored=0;
+ const bad=new Client({historyRange:async start=>({frames:[frame(start,{kind:'history',viewer:1})],next:start+1})},{restoreFrame:raw=>{restored++;return raw;}});
+ try{bad.accept(frame(2));await assert.rejects(bad.historyRange(0,1),/HISTORY_FRAME_INVALID/);assert.equal(restored,1);}finally{bad.close();}
 });
 
 test('overlapping range readers share pending frames instead of issuing duplicate requests',async()=>{

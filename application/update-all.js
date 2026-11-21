@@ -17,8 +17,10 @@
     this.progress('Подготавливаем обновление приложения…');if(app.updateInfo.download?.phase!=='ready')await app.downloadUpdate();this.guard();await app.activateUpdate();return {reloading:true};
    }
    this.progress('Проверяем обновления установленных игр…');const catalog=await this.remote.refresh();this.guard();const selected=[];
-   for(const id of job.ids){const item=catalog.packs.find(p=>p.id===id);if(!item)continue;const rows=this.manager.list().filter(p=>p.id===id);if(rows.some(p=>this.manager.constructor.compareVersions(p.version,item.version)>0))continue;
-    selected.push({id,version:item.version,prepared:rows.some(p=>p.version===item.version)?null:await this.remote.prepare(id)});this.guard();this.progress(`Загружены игры: ${selected.length} / ${job.ids.length}`);
+   // The persisted IDs describe the pre-restart library. Resolve them against the new catalog.
+   const targets=this.remote.targets(job.ids,catalog.packs);
+   for(const {id,version} of targets){const rows=this.manager.list().filter(p=>p.id===id);if(rows.some(p=>this.manager.constructor.compareVersions(p.version,version)>0))continue;
+    selected.push({id,version,prepared:rows.some(p=>p.version===version)?null:await this.remote.prepare(id)});this.guard();this.progress(`Загружены игры: ${selected.length} / ${targets.length}`);
    }
    // All downloads and compatibility checks finish before any activation/removal.
    for(const item of selected){this.guard();if(item.prepared)await this.manager.install(item.prepared,{activate:true});else await this.manager.activate(item.id,item.version);await this.settle();}

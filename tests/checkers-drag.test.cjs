@@ -24,8 +24,13 @@ function fixture({capture = false, flipped = false} = {}) {
   return saved;
 }
 const coordinate = index => `${'abcdefgh'[index % 8]}${8 - Math.floor(index / 8)}`;
-const cell = (page, index) => page.locator(`.checker-cell[aria-label^="${coordinate(index)}"]`);
-const piece = (page, index) => page.locator(`.checker-board .checker-piece[data-board-cell="${index}"]`);
+// Match pieces and cells by board position across the two renderers.
+const boardSelector = ':is(.checker-board,.sdk-draughts-board)';
+const cellSelector = `${boardSelector} [data-grid-cell]`;
+const cell = (page, index) => page.locator(`${cellSelector}[aria-label^="${coordinate(index)}"]`);
+const piece = (page, index) => page.locator(`${boardSelector} [data-board-cell="${index}"]`);
+const movableCells = page => page.locator(`${boardSelector} [data-drag-piece][data-board-cell]`)
+  .evaluateAll(nodes => nodes.map(node => Number(node.dataset.boardCell)).sort((a,b) => a-b));
 async function center(locator) {
   const r = await locator.boundingBox(); assert(r && r.width && r.height);
   return {x: r.x + r.width / 2, y: r.y + r.height / 2};
@@ -92,27 +97,35 @@ test('Checkers drag/drop through the real application', {timeout: 120000}, async
       try {
         if(process.env.PLAYROOM_CHECKERS_ARTIFACT){const fs=require('node:fs'),body=fs.readFileSync(process.env.PLAYROOM_CHECKERS_ARTIFACT),hash=value=>require('node:crypto').createHash('sha256').update(value).digest('hex');await page.route('**/*',route=>route.abort());await page.route(server.url,route=>route.fulfill({status:200,contentType:'text/html',body}));const response=await page.goto(server.url);entry.artifactSha256=hash(await response.body());assert.equal(entry.artifactSha256,hash(body));}else await page.goto(process.env.PLAYROOM_URL||server.url);
         await page.locator('.game-tile').first().waitFor();await page.locator('[data-hub-page=sessions]:visible').first().click();await page.locator('.saved-game[data-saved-actions-toggle]').first().click();await page.locator('[data-resume-id]:visible').first().click();if(await page.locator('[data-command=unlock]').count())await page.locator('[data-command=unlock]').click();
-        await page.locator('.checker-board').waitFor({state: 'visible'});
+        await page.locator(boardSelector).waitFor({state: 'visible'});
         await run({page, context, saved}); await assertNoOverflow(page); assert.deepEqual(errors, []);assert.equal(network.nativeSupabaseRequests,0);entry.pass=true;
       } finally {entry.errors=errors;entry.nativeSupabaseRequests=network.nativeSupabaseRequests;await context.close(); }
     });
   }
   try {
     await check('Thin cell and checker rings preserve the board colour in both themes and orientations', {mobile: true, capture: true}, async ({page, context}) => {
-      const fs=require('node:fs'),dir=path.resolve(__dirname,'../tmp_files/checkers-review');fs.mkdirSync(dir,{recursive:true});
+      const fs=require('node:fs'),dir=process.env.PLAYROOM_DRAG_REPORT_DIR||path.resolve(__dirname,'../tmp_files/checkers-review');fs.mkdirSync(dir,{recursive:true});
       await piece(page,42).tap();const cdp=await context.newCDPSession(page);
       for(const [width,height]of [[390,844],[844,390],[768,1024],[1024,768]])for(const theme of ['light','dark']){
         await page.setViewportSize({width,height});await page.evaluate(theme=>PlayroomAppearanceUI.runtime.service.select(theme),theme);
-        if(!await cell(page,28).evaluate(el=>el.classList.contains('destination')))await piece(page,42).tap();
-        const original=await page.locator('.checker-cell.dark:not(.destination)').first().evaluate(el=>getComputedStyle(el).backgroundColor);
+        if(!await cell(page,28).getAttribute('data-drop-piece'))await piece(page,42).tap();
+        const original=await page.locator(`${cellSelector}:is(.dark,.is-dark):not([data-drop-piece])`).first().evaluate(el=>getComputedStyle(el).backgroundColor);
         const target=cell(page,28),ring=await target.evaluate(el=>({background:getComputedStyle(el).backgroundColor,width:parseFloat(getComputedStyle(el).outlineWidth)}));
         assert.equal(ring.background,original,'destination changes only its outline');assert(ring.width>0&&ring.width<=2);
-        assert(await piece(page,42).evaluate(el=>parseFloat(getComputedStyle(el.querySelector('.piece-contour')).strokeWidth)<=2),'checker selection ring stays thin');
+        const face=await piece(page,42).locator('.piece-contour').evaluate(el=>{
+          const style=getComputedStyle(el);return {fill:style.fill,width:parseFloat(style.strokeWidth)};
+        });
+        assert(face.width<=2,'checker selection ring stays thin');
         await page.screenshot({path:path.join(dir,`${theme}-${width}x${height}.png`)});
         await touchDrag(page,cdp,42,28,{cancel:true,inspect:async()=>{
           const hover=await target.evaluate(el=>({background:getComputedStyle(el).backgroundColor,width:parseFloat(getComputedStyle(el).outlineWidth),shadow:getComputedStyle(el).boxShadow}));
           assert.equal(hover.background,original);assert(hover.width>0&&hover.width<=2);assert.equal(hover.shadow,'none');
-          assert(await page.locator('.playroom-drag-ghost').evaluate(el=>parseFloat(getComputedStyle(el.querySelector('.piece-contour')).strokeWidth)<=2));
+          const ghost=await page.locator('.playroom-drag-ghost .piece-contour').evaluate(el=>{
+            const style=getComputedStyle(el);return {fill:style.fill,width:parseFloat(style.strokeWidth)};
+          });
+          assert.equal(ghost.fill,face.fill,'the dragged checker keeps its material color');
+          assert(ghost.width>0&&ghost.width<=2,'the drag outline stays thin');
+          if(process.env.PLAYROOM_DRAG_REPORT_DIR&&width===844)await page.screenshot({path:path.join(dir,`drag-${theme}.png`)});
         }});
       }
     });
@@ -124,13 +137,15 @@ test('Checkers drag/drop through the real application', {timeout: 120000}, async
     });
     await check('Only movable pieces can be dragged; click selection exposes exact destinations', {}, async ({page, saved}) => {
       const legal = Core.legalActions(saved.states[0]);
-      const actual = await page.locator('.checker-board [data-drag-piece]').evaluateAll(els => els.map(el => Number(el.dataset.dragPiece)).sort((a, b) => a - b));
+      const actual = await movableCells(page);
       assert.deepEqual(actual, [...new Set(legal.map(a => a.from))].sort((a, b) => a - b));
       assert.equal(await page.locator('[data-drop-piece]').count(), 0);
       const first = legal[0]; await piece(page, first.from).click();
-      const targets = await page.locator('.checker-cell[data-drop-piece]').evaluateAll(els => els.map(el => ({from: Number(el.dataset.dropPiece), action: JSON.parse(el.dataset.action)})));
-      assert.deepEqual(targets.map(t => t.action.to).sort(), legal.filter(a => a.from === first.from).map(a => a.to).sort());
-      assert(targets.every(t => t.from === first.from && t.action.from === first.from));
+      const source = await piece(page, first.from).getAttribute('data-drag-piece');
+      const targets = await page.locator(`${cellSelector}[data-drop-piece]`).evaluateAll(nodes =>
+        nodes.map(node => ({source:node.dataset.dropPiece,coordinate:node.getAttribute('aria-label').slice(0,2)})));
+      assert.deepEqual(targets.map(target => target.coordinate).sort(), legal.filter(action => action.from === first.from).map(action => coordinate(action.to)).sort());
+      assert(source && targets.every(target => target.source === source));
       await cell(page, first.to).click(); await expectMove(page, 1);
       assert.deepEqual((await state(page)).data, Core.applyAction(saved.states[0], 0, first).data);
     });
@@ -153,7 +168,7 @@ test('Checkers drag/drop through the real application', {timeout: 120000}, async
     });
     for (const flipped of [false, true]) {
       await check(`Quick diagonal touch without a hold, viewer ${flipped ? 1 : 0}`, {mobile: true, flipped}, async ({page, context, saved}) => {
-        assert.match(await page.locator('.checker-cell').first().getAttribute('aria-label'), new RegExp(`^${flipped ? 'h1' : 'a8'}`));
+        assert.match(await page.locator(cellSelector).first().getAttribute('aria-label'), new RegExp(`^${flipped ? 'h1' : 'a8'}`));
         const action = Core.legalActions(saved.states[0])[0], cdp = await context.newCDPSession(page);
         await touchDrag(page, cdp, action.from, action.to); await expectMove(page, 1);
         assert.deepEqual((await state(page)).data, Core.applyAction(saved.states[0], saved.states[0].turn, action).data);
@@ -168,11 +183,11 @@ test('Checkers drag/drop through the real application', {timeout: 120000}, async
     });
     await check('Mandatory and chained captures allow only the same capturing piece', {mobile: true, capture: true}, async ({page, context}) => {
       const cdp = await context.newCDPSession(page);
-      assert.deepEqual(await page.locator('.checker-board [data-drag-piece]').evaluateAll(els => els.map(el => el.dataset.dragPiece)), ['42']);
+      assert.deepEqual(await movableCells(page),[42]);
       assert.equal(await piece(page, 56).getAttribute('data-drag-piece'), null);
       await touchDrag(page, cdp, 42, 28); await expectMove(page, 1);
       const mid = await state(page); assert.equal(mid.turn, 0); assert.equal(mid.data.forced, 28); assert.deepEqual(mid.data.captured, [35]);
-      assert.deepEqual(await page.locator('.checker-board [data-drag-piece]').evaluateAll(els => els.map(el => el.dataset.dragPiece)), ['28']);
+      assert.deepEqual(await movableCells(page),[28]);
       assert.equal(await piece(page, 35).getAttribute('data-drag-piece'), null);
       await touchDrag(page, cdp, 28, 14); await expectMove(page, 2);
       const after = await state(page); assert.equal(after.data.forced, null); assert.equal(after.data.board[14].id, 'checker-42');
@@ -180,20 +195,20 @@ test('Checkers drag/drop through the real application', {timeout: 120000}, async
     });
     for (const mobile of [false, true]) {
       await check(`Motion keeps the dropped piece at its destination with no field overflow (${mobile ? 'touch' : 'mouse'})`, {mobile, capture: true, motion: true}, async ({page, context}) => {
-        await page.evaluate(() => {
+        await page.evaluate(boardSelector => {
           window.dragFrames = []; window.watchDroppedPiece = false;
           const until = performance.now() + 2200;
           function frame() {
             const scene = document.querySelector('.scene'), game = document.querySelector('.game-scene');
-            const el = document.querySelector('.checker-board [data-entity="checker-checker-42"][data-board-cell="28"]');
-            const r = el?.getBoundingClientRect(), cell = el?.closest('.checker-cell').getBoundingClientRect();
+            const el = document.querySelector(`${boardSelector} [data-entity="checker-checker-42"][data-board-cell="28"]`);
+            const r = el?.getBoundingClientRect(), cell = el?.closest('[data-grid-cell]').getBoundingClientRect();
             window.dragFrames.push({overflow: document.documentElement.scrollWidth > innerWidth + 1 || document.documentElement.scrollHeight > innerHeight + 1 || scene.scrollWidth > scene.clientWidth + 1,
               fieldTransform: getComputedStyle(game).transform,
               distance: r && cell ? Math.hypot(r.x + r.width / 2 - cell.x - cell.width / 2, r.y + r.height / 2 - cell.y - cell.height / 2) : null});
             if (performance.now() < until) requestAnimationFrame(frame);
           }
           requestAnimationFrame(frame);
-        });
+        },boardSelector);
         if (mobile) await touchDrag(page, await context.newCDPSession(page), 42, 28);
         else await mouseDrag(page, 42, 28);
         await expectMove(page, 1);

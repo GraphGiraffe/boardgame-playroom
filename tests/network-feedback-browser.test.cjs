@@ -16,7 +16,7 @@ async function fixture(browser){
   await page.setContent('<!doctype html><html lang="ru"><head><meta name="viewport" content="width=device-width, initial-scale=1"></head><body><div id="app"></div><div id="modal-root"></div><div id="toast"></div></body></html>');
   await page.evaluate(()=>{const values=new Map();Object.defineProperty(window,'localStorage',{value:{getItem:key=>values.get(key)??null,setItem:(key,value)=>values.set(key,String(value)),removeItem:key=>values.delete(key)}});});
   for(const name of ['app/styles.css','core/game-components.css','core/ui.css','core/input.css','app/first-turn-guide.css','app/shared-views.css','app/game-interactions.css','app/design-system.css'])await page.addStyleTag({content:read(name)});
-  for(const name of ['core/messages.js','presentation/localization.js','core/protocol.js','core/vector-art.js','core/component-assets.js','core/game-components.js','core/token-layout.js','core/ui.js','core/player-target.js','core/motion.js','presentation/plan-player.js','presentation/scheduler.js','core/game-flow.js','core/hand-overflow.js','core/size-tokens.js','platform/web/element-sizes.js','app/views.js','application/history-controller.js','application/game-screen-controller.js','platform/web/dom.js','app/game-screen.js','application/tutorial-controller.js','platform/web/guide-preferences.js','app/first-turn-guide.js','platform/web/action-reveal.js','presentation/event-plan.js','app/game-feedback.js','core/input.js','platform/web/pack-loader.js','app/shared-views.js'])await page.addScriptTag({content:name==='platform/web/action-reveal.js'&&process.env.PLAYROOM_ACTION_REVEAL_OVERRIDE?fs.readFileSync(process.env.PLAYROOM_ACTION_REVEAL_OVERRIDE,'utf8'):read(name)});
+  for(const name of ['core/messages.js','presentation/localization.js','core/protocol.js','core/vector-art.js','core/component-assets.js','core/game-components.js','core/token-layout.js','core/ui.js','core/player-target.js','core/motion.js','presentation/plan-player.js','presentation/scheduler.js','presentation/transition.js','core/game-flow.js','core/hand-overflow.js','core/size-tokens.js','platform/web/element-sizes.js','app/views.js','application/history-controller.js','application/game-screen-controller.js','platform/web/dom.js','app/game-screen.js','application/tutorial-controller.js','platform/web/guide-preferences.js','app/first-turn-guide.js','platform/web/action-reveal.js','presentation/event-plan.js','app/game-feedback.js','core/input.js','platform/web/pack-loader.js','app/shared-views.js'])await page.addScriptTag({content:name==='platform/web/action-reveal.js'&&process.env.PLAYROOM_ACTION_REVEAL_OVERRIDE?fs.readFileSync(process.env.PLAYROOM_ACTION_REVEAL_OVERRIDE,'utf8'):read(name)});
   await page.evaluate(()=>{PlayroomFirstTurnGuide.setEnabled('uno',false);PlayroomFirstTurnGuide.setEnabled('ludo',false);});
   return page;
 }
@@ -599,14 +599,22 @@ test('field target measurement preserves artwork throughout paused movement and 
   assert.equal(await page.locator('.playroom-motion-flight').count(),0);
   assert.equal(await page.evaluate(()=>{
    const field=document.querySelector('.game-field-content'),node=field.firstChild;
-   try{PlayroomMotion.withFieldTargets('<div>temporary</div>',()=>{throw Error('measurement failure');});}catch(error){return error.message==='measurement failure'&&field.firstChild===node;}
+   try{PlayroomMotion.withFieldTargets(()=>({html:'<div>temporary</div>'}),()=>{throw Error('measurement failure');});}catch(error){return error.message==='measurement failure'&&field.firstChild===node;}
    return false;
   }),true,'failed measurement restores the exact original nodes');
   assert.equal(await page.evaluate(()=>{
    const field=document.querySelector('.game-field-content'),node=field.firstChild;
-   const result=PlayroomMotion.withFieldTargets('<div data-motion-effect="flip">temporary</div>',()=>{throw Error('unsupported effect started');});
+   const result=PlayroomMotion.withFieldTargets(()=>({html:'<div data-motion-effect="flip">temporary</div>'}),()=>{throw Error('unsupported effect started');});
    return result===null&&field.firstChild===node;
   }),true,'special effects keep their live target adapter');
+  assert.equal(await page.evaluate(()=>{
+   const field=document.querySelector('.game-field-content'),node=field.firstElementChild;
+   node.dataset.sdkPlayerScene='';
+   try{
+    const unexpected=()=>{throw Error('mounted SDK field requested detached work');};
+    return PlayroomMotion.withFieldTargets(unexpected,unexpected)===null&&field.firstElementChild===node;
+   }finally{delete node.dataset.sdkPlayerScene;}
+  }),true,'mounted fields skip detached markup and reference preparation');
   await page.evaluate(()=>{targetReplace();targetAccept(4);});
   await page.waitForFunction(()=>document.querySelector('[data-motion-kind="arrival"]'));
   await page.evaluate(()=>targetFeedback.player.pause());

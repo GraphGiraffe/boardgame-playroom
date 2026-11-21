@@ -1,25 +1,37 @@
 if(typeof module==='object'&&module.exports&&typeof require==='function')require("../core/messages.js");
 (function(root,factory){const api=factory(root.PlayroomProtocol||(typeof require==='function'?require('../core/protocol.js'):null));if(typeof module==='object'&&module.exports)module.exports=api;root.PlayroomClientConnectionService=api;})(typeof globalThis!=='undefined'?globalThis:this,function(P){
   'use strict';
+  const historyEncoder=new TextEncoder();
+  const jsonBytes=value=>historyEncoder.encode(JSON.stringify(value)).byteLength;
   class SessionClient {
     constructor(transport,{onEffect=()=>{},idFactory,readHistory=null,writeHistory=null,writeHistoryRange=null,restoreFrame=frame=>frame,historyBudget=16*1024*1024}={}){
       if(typeof idFactory!=='function')throw Error('CLIENT_ID_SOURCE_REQUIRED');this.idFactory=idFactory;
       if(!Number.isSafeInteger(historyBudget)||historyBudget<1)throw Error('HISTORY_BUDGET_INVALID');
+      this.historyPayloadSizes=new WeakMap();
       this.historyBudget=historyBudget;this.historyBytes=0;this.historySizes=new Map();this.restoreFrame=restoreFrame;this.readHistory=readHistory;this.writeHistory=writeHistory;this.writeHistoryRange=writeHistoryRange;this.historyFrames=new Map();this.historyPending=new Map();
       this.transport=transport;this.snapshot=null;this.confirmedFrame=null;this.pending=null;this.deliveryError=null;this.inFlight=null;this.listeners=new Set();this.onEffect=onEffect;this.lastEvent=0;this.lastEffectRevision=-1;this.epoch=null;this.closed=false;this.recovering=false;
       this.unsubscribe=transport.subscribe?.(s=>this.accept(s));
     }
-    accept(snapshot){
-      if(this.closed)return false;
-      if(this.snapshot&&snapshot?.kind==='snapshot'&&snapshot.protocolVersion===3&&P.sameAudience(snapshot,this.snapshot)&&snapshot.game===this.snapshot.game&&snapshot.packVersion===this.snapshot.packVersion&&P.sameStatus(snapshot,this.snapshot))return false;
-      snapshot=this.restoreFrame(snapshot);
+    _acceptsSnapshotHeader(snapshot){
       if(this.closed||snapshot?.kind!=='snapshot'||snapshot.protocolVersion!==3||!Number.isSafeInteger(snapshot.revision))return false;
-      if(this.snapshot&&(snapshot.sessionId!==this.snapshot.sessionId||snapshot.authorityEpoch!==this.epoch))throw Error(globalThis.PlayroomMessages.text("ui.session-client.c5aa2db0f54c"));
-      if(this.snapshot&&(snapshot.revision<this.snapshot.revision||(snapshot.rosterRevision||0)<(this.snapshot.rosterRevision||0)||(snapshot.playerControlRevision||0)<(this.snapshot.playerControlRevision||0)||(snapshot.controlRevision||0)<(this.snapshot.controlRevision||0)||!P.sameAudience(snapshot,this.snapshot)||snapshot.packVersion!==this.snapshot.packVersion||snapshot.game!==this.snapshot.game))return false;
+      const previous=this.snapshot;
+      if(previous&&(snapshot.sessionId!==previous.sessionId||snapshot.authorityEpoch!==this.epoch))throw Error(globalThis.PlayroomMessages.text("ui.session-client.c5aa2db0f54c"));
       if((snapshot.reactionRevision!==undefined&&(!Number.isSafeInteger(snapshot.reactionRevision)||snapshot.reactionRevision<0))||(snapshot.paused!==undefined&&typeof snapshot.paused!=='boolean')||(snapshot.controlRevision!==undefined&&(!Number.isSafeInteger(snapshot.controlRevision)||snapshot.controlRevision<0)))return false;
+      if(!previous)return true;
+      if(!P.sameAudience(snapshot,previous)||snapshot.packVersion!==previous.packVersion||snapshot.game!==previous.game)return false;
+      const revision=snapshot.revision-previous.revision,roster=(snapshot.rosterRevision||0)-(previous.rosterRevision||0),
+        players=(snapshot.playerControlRevision||0)-(previous.playerControlRevision||0),control=(snapshot.controlRevision||0)-(previous.controlRevision||0);
+      if(revision<0||roster<0||players<0||control<0)return false;
+      return revision>0||roster>0||players>0||control>0||(snapshot.reactionRevision||0)>(previous.reactionRevision||0);
+    }
+    accept(snapshot){
+      // The transport has decoded the frame, but the presentation port has
+      // not executed a pack. Reject obsolete and out-of-scope headers here.
+      if(!this._acceptsSnapshotHeader(snapshot))return false;
+      snapshot=this.restoreFrame(snapshot);
+      if(!this._acceptsSnapshotHeader(snapshot))return false;
       if(snapshot.playerControlRevision!==undefined&&(!Number.isSafeInteger(snapshot.playerControlRevision)||snapshot.playerControlRevision<0||!Array.isArray(snapshot.playerControls)||snapshot.playerControls.length!==snapshot.state?.players?.length||snapshot.playerControls.some(v=>!v||typeof v.away!=='boolean'||typeof v.bot!=='boolean')))return false;
       const initial=!this.snapshot;
-      if(!initial&&snapshot.revision===this.snapshot.revision&&(snapshot.playerControlRevision||0)<=(this.snapshot.playerControlRevision||0)&&(snapshot.controlRevision||0)<=(this.snapshot.controlRevision||0)&&(snapshot.reactionRevision||0)<=(this.snapshot.reactionRevision||0)&&(snapshot.rosterRevision||0)<=(this.snapshot.rosterRevision||0))return false;
       this.epoch=snapshot.authorityEpoch;this.confirmedFrame=P.immutable(snapshot);this._rememberHistory(this.confirmedFrame,this.confirmedFrame);this.snapshot=this.presentSnapshot(this.confirmedFrame);
       if(!initial&&!this.recovering){
         for(const cue of snapshot.cues||[])if(cue.eventId>this.lastEvent)this.onEffect({type:'sound',...cue});
@@ -85,16 +97,50 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       });
       return this.inFlight;
     }
+    _matchesHistoryHeader(frame,index,scope){
+      return !!frame&&!!scope&&frame.revision===index&&frame.sessionId===scope.sessionId&&frame.authorityEpoch===scope.authorityEpoch&&
+        frame.game===scope.game&&frame.packVersion===scope.packVersion&&P.sameAudience(frame,scope);
+    }
     _historyFrame(frame,index,scope=this.snapshot){
-      if(!frame||frame.revision!==index||frame.state?.move!==index||
-        ['sessionId','authorityEpoch','game','packVersion'].some(key=>frame[key]!==scope?.[key])||!P.sameAudience(frame,scope))return null;
-      return frame;
+      return this._matchesHistoryHeader(frame,index,scope)&&frame.state?.move===index?frame:null;
+    }
+    _restoreHistoryFrame(raw,index,scope){
+      // Compact history omits state.move. Check scope and index before
+      // reconstruction, then validate the restored state's revision.
+      if(this.closed||!this._matchesHistoryHeader(raw,index,scope))return null;
+      return this._historyFrame(this.restoreFrame(raw),index,scope);
+    }
+    _historySize(frame){
+      let payloadBytes=0;
+      const sizeOf=(value,measure=jsonBytes)=>{
+        if(!value||typeof value!=='object')return jsonBytes(value);
+        let bytes=this.historyPayloadSizes.get(value);
+        if(bytes===undefined){bytes=measure(value);this.historyPayloadSizes.set(value,bytes);}
+        return bytes;
+      };
+      const eventBytes=value=>{
+        if(!Array.isArray(value))return jsonBytes(value);
+        let bytes=2+Math.max(0,value.length-1);
+        for(const event of value)bytes+=sizeOf(event);
+        return bytes;
+      };
+      const placeholder=(value,measure)=>{
+        if(!value||typeof value!=='object')return value;
+        // Each null occupies four bytes in the envelope. The budget still
+        // counts every occurrence, even when two fields share the same value.
+        payloadBytes+=sizeOf(value,measure)-4;
+        return null;
+      };
+      const state={...frame.state,scene:placeholder(frame.state.scene),events:placeholder(frame.state.events,eventBytes)};
+      const envelopeBytes=jsonBytes({...frame,state,events:placeholder(frame.events,eventBytes)});
+      return envelopeBytes+payloadBytes;
     }
     _rememberHistory(frame,scope=this.snapshot){
       const valid=this._historyFrame(frame,frame.revision,scope);if(!valid)return null;
-      const history=P.freeze({...P.immutable(valid),protocolVersion:3,kind:'history',...(scope.role?{role:scope.role}:{}),actions:[],independentActions:[],cues:valid.cues||[],effects:valid.effects||[],reactionWindow:null,reactionWindows:[]});
+      const source=P.immutable(valid);
+      const history=P.composeRecord({...source,protocolVersion:3,kind:'history',...(scope.role?{role:scope.role}:{}),actions:[],independentActions:[],cues:source.cues||[],effects:source.effects||[],reactionWindow:null,reactionWindows:[]});
       this.historyBytes-=this.historySizes.get(frame.revision)||0;
-      const size=new TextEncoder().encode(JSON.stringify(history)).byteLength;
+      const size=this._historySize(history);
       this.historySizes.set(frame.revision,size);this.historyBytes+=size;
       this.historyFrames.delete(frame.revision);this.historyFrames.set(frame.revision,history);
       while(this.historyFrames.size>1&&(this.historyFrames.size>128||this.historyBytes>this.historyBudget)){
@@ -111,9 +157,9 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       const scope=this.snapshot;
       const pending=Promise.resolve().then(async()=>{
         let frame,fetched=false;
-        try{frame=this._historyFrame(this.restoreFrame(await this.readHistory?.(index,scope)),index,scope);}catch(_){/* Storage failure does not block remote recovery. */}
+        try{frame=this._restoreHistoryFrame(await this.readHistory?.(index,scope),index,scope);}catch(_){/* Storage failure does not block remote recovery. */}
         if(this.closed)throw Error('HISTORY_CLOSED');
-        if(!frame){fetched=true;frame=this._historyFrame(this.restoreFrame(await this.transport.history(index)),index,scope);}
+        if(!frame){fetched=true;frame=this._restoreHistoryFrame(await this.transport.history(index),index,scope);}
         if(this.closed||!frame||!this._historyFrame(frame,index))throw Error('HISTORY_FRAME_INVALID');
         const history=this._rememberHistory(frame);
         try{if(fetched)await this.writeHistory?.(history);}catch(_){/* The memory copy remains available if durable storage fails. */}
@@ -128,7 +174,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       for(let index=start;index<end;index++){
         if(this.historyFrames.has(index)){found.set(index,this.historyFrames.get(index));continue;}
         if(this.historyPending.has(index)){found.set(index,await this.historyPending.get(index));continue;}
-        let frame;try{frame=this._historyFrame(this.restoreFrame(await this.readHistory?.(index,scope)),index,scope);}catch(_){}
+        let frame;try{frame=this._restoreHistoryFrame(await this.readHistory?.(index,scope),index,scope);}catch(_){}
         if(frame)found.set(index,this._rememberHistory(frame));else missing.push(index);
       }
       for(let offset=0;offset<missing.length;){
@@ -151,7 +197,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
            return frames;
          });
          const prepared=group.map(index=>request.then(frames=>{
-           const frame=this._historyFrame(this.restoreFrame(frames.get(index)),index,scope);
+           const frame=this._restoreHistoryFrame(frames.get(index),index,scope);
            if(this.closed||!frame||!this._historyFrame(frame,index))throw Error('HISTORY_FRAME_INVALID');return this._rememberHistory(frame);
          }));
         const committed=Promise.all(prepared).then(async frames=>{

@@ -29,55 +29,135 @@ test('lobby host transfer: three RTC peers preserve the room without Supabase an
  }catch(error){report.failure={phase,error:error.message};throw error;}finally{report.engine=browser.browserType().name();report.version=browser.version();report.errors=errors;report.nativeSupabaseRequests=supabaseRequests.length;fs.writeFileSync(path.join(out,'report.json'),JSON.stringify(report,null,2));await browser.close();await server.close();}
 });
 
-test('planned host transfer: three real RTC players change host, keep seats and continue after old device closes',{timeout:120000},async()=>{
- const server=await serveBrowserFixture(root),browser=await chromium.launch({headless:true,executablePath:executablePath(),args:['--no-sandbox','--disable-background-networking']}),pages=[],errors=[],supabaseRequests=[],report={phases:[],artifact:null},out=path.resolve(process.env.PLAYROOM_HANDOFF_OUT_DIR||path.join(root,'../tmp_files/ux-021/rtc-playing-transfer-1104/current'));let phase='profiles';const fs=require('node:fs');fs.mkdirSync(out,{recursive:true});const active=p=>p.locator('#modal-root>[data-surface-state=active]');
+function playingTransfer(game,{spectator=false}={}){return async()=>{
+ const server=await serveBrowserFixture(root),browser=await chromium.launch({headless:true,executablePath:executablePath(),args:['--no-sandbox','--disable-background-networking']}),pages=[],errors=[],supabaseRequests=[],report={phases:[],artifact:null},out=path.resolve(process.env.PLAYROOM_HANDOFF_OUT_DIR||path.join(root,'../tmp_files/ux-021/rtc-playing-transfer-1104/current'),spectator?'uno-spectator':game==='uno'?'uno':'.');let phase='profiles';const fs=require('node:fs');fs.mkdirSync(out,{recursive:true});const active=p=>p.locator('#modal-root>[data-surface-state=active]');
  try{
-  for(const name of ['Анна','Борис','Вера']){const context=await browser.newContext({playroomProfile:false,viewport:{width:390,height:740}});if(name==='Борис')await context.addInitScript(()=>{let authority;Object.defineProperty(window,'SessionAuthority',{configurable:true,get:()=>authority,set:value=>{authority=class extends value{constructor(session,options){super(session,options);if(options?.sessionId===window.trackedTransferSession)window.handoffAuthorityStarts=(window.handoffAuthorityStarts||0)+1;}};}});});await context.addInitScript(()=>localStorage.setItem('playroom.settings.v1',JSON.stringify({sound:false,tutorialsEnabled:false,animationSpeed:'instant'})));await accountSyncRoute.installFetch(context,async route=>route.fulfill({json:{}}));context.on('request',r=>{if(/\.supabase\.co\//.test(r.url()))supabaseRequests.push(r.url().split('?')[0]);});const page=await context.newPage();page.setDefaultTimeout(15000);page.on('pageerror',e=>errors.push(e.stack));if(process.env.PLAYROOM_HANDOFF_ARTIFACT){const body=fs.readFileSync(process.env.PLAYROOM_HANDOFF_ARTIFACT),hash=value=>require('node:crypto').createHash('sha256').update(value).digest('hex');await page.route('**/*',route=>route.abort());await page.route(server.url,route=>route.fulfill({status:200,contentType:'text/html',body}));const response=await page.goto(server.url);assert.equal(hash(await response.body()),hash(body));report.artifact=hash(body);}else await page.goto(server.url);await page.locator('#profile-form [name=playerName][name=playerName]').fill(name);await page.locator('#profile-form').evaluate(f=>f.requestSubmit());await page.locator('.game-grid').first().waitFor();await page.evaluate(()=>PlayroomFirstTurnGuide.setEnabled('ludo',false));pages.push(page);}
+  for(const name of ['Анна','Борис','Вера']){const context=await browser.newContext({playroomProfile:false,viewport:{width:390,height:740}});if(name==='Борис')await context.addInitScript(()=>{let authority;Object.defineProperty(window,'SessionAuthority',{configurable:true,get:()=>authority,set:value=>{authority=class extends value{constructor(session,options){super(session,options);if(options?.sessionId===window.trackedTransferSession)window.handoffAuthorityStarts=(window.handoffAuthorityStarts||0)+1;}};}});});await context.addInitScript(()=>localStorage.setItem('playroom.settings.v1',JSON.stringify({sound:false,tutorialsEnabled:false,animationSpeed:'instant'})));await accountSyncRoute.installFetch(context,async route=>route.fulfill({json:{}}));context.on('request',r=>{if(/\.supabase\.co\//.test(r.url()))supabaseRequests.push(r.url().split('?')[0]);});const page=await context.newPage();page.setDefaultTimeout(15000);page.on('pageerror',e=>errors.push(e.stack));if(process.env.PLAYROOM_HANDOFF_ARTIFACT){const body=fs.readFileSync(process.env.PLAYROOM_HANDOFF_ARTIFACT),hash=value=>require('node:crypto').createHash('sha256').update(value).digest('hex');await page.route('**/*',route=>route.abort());await page.route(server.url,route=>route.fulfill({status:200,contentType:'text/html',body}));const response=await page.goto(server.url);assert.equal(hash(await response.body()),hash(body));report.artifact=hash(body);}else await page.goto(server.url);await page.locator('#profile-form [name=playerName][name=playerName]').fill(name);await page.locator('#profile-form').evaluate(f=>f.requestSubmit());await page.locator('.game-grid').first().waitFor();await page.evaluate(game=>PlayroomFirstTurnGuide.setEnabled(game,false),game);pages.push(page);}
   const [host,next,other]=pages;
-  await host.locator('[data-start=ludo]').click();await host.locator('[data-game-mode=network]').click();
-  await host.evaluate(()=>{const b=PlayroomAppBridge,r=b.room();b.roomService.setAutoStart(r.id,r.ownerId,false);for(const id of ['seat-2','seat-3'])b.roomService.setLocalSeat(r.id,r.ownerId,id,{kind:'empty'});b.roomService.setLocalSeat(r.id,r.ownerId,'seat-4',{kind:'bot',nickname:'Бот'});b.roomService.configure(r.id,r.ownerId,{firstPlayerMode:'assigned',firstParticipantId:r.ownerId});b.renderLobby();});
-  for(const [page,seat] of [[next,'seat-2'],[other,'seat-3']]){
-   phase='pair-'+seat;await host.locator('#network-pair-button').click();await active(host).locator('[role=tab][data-nearby-method=text]').click();await host.waitForFunction(()=>!!document.querySelector('#net-host-token')?.value);const offer=await host.locator('#net-host-token').inputValue();await page.locator('#network-join-button').click();await page.locator('[data-lobby-online=manual]').click();await active(page).locator('[role=tab][data-nearby-method=text]').click();await page.locator('#net-client-offer textarea[name=offer]').fill(offer);await page.locator('#net-client-offer').evaluate(f=>f.requestSubmit());
+  await host.locator('[data-start='+game+']').click();await host.locator('[data-game-mode=network]').click();
+  await host.evaluate(game=>{const b=PlayroomAppBridge,r=b.room();b.roomService.setAutoStart(r.id,r.ownerId,false);for(const id of ['seat-2','seat-3'])b.roomService.setLocalSeat(r.id,r.ownerId,id,{kind:'empty'});if(game==='ludo')b.roomService.setLocalSeat(r.id,r.ownerId,'seat-4',{kind:'bot',nickname:'Бот'});b.roomService.configure(r.id,r.ownerId,{firstPlayerMode:'assigned',firstParticipantId:r.ownerId});b.renderLobby();},game);
+  for(const [page,seat] of [[next,spectator?null:'seat-2'],[other,spectator?'seat-2':'seat-3']]){
+   phase='pair-'+(seat||'spectator');await host.locator('#network-pair-button').click();await active(host).locator('[role=tab][data-nearby-method=text]').click();await host.waitForFunction(()=>!!document.querySelector('#net-host-token')?.value);const offer=await host.locator('#net-host-token').inputValue();await page.locator('#network-join-button').click();await page.locator('[data-lobby-online=manual]').click();await active(page).locator('[role=tab][data-nearby-method=text]').click();await page.locator('#net-client-offer textarea[name=offer]').fill(offer);await page.locator('#net-client-offer').evaluate(f=>f.requestSubmit());
    await page.waitForFunction(()=>!!document.querySelector('#net-client-token')?.value);const answer=await page.locator('#net-client-token').inputValue();await active(host).locator('[role=tab][data-nearby-direction=receive]').click();await active(host).locator('[role=tab][data-nearby-method=text]').click();await host.locator('#net-host-answer textarea[name=answer]').fill(answer);await host.locator('#net-host-answer').evaluate(f=>f.requestSubmit());
-   await page.locator('#net-client-join').waitFor();await page.locator('#net-client-join').evaluate(f=>f.requestSubmit());await page.locator(`[data-net-seat=${seat}]`).click();await host.evaluate(()=>PlayroomNetworkLibrary.openRoom());
+   await page.locator('#net-client-join').waitFor();await page.locator('#net-client-join').evaluate(f=>f.requestSubmit());await page.locator('.room-v021').waitFor();if(seat)await page.locator(`[data-net-seat=${seat}]`).click();await host.evaluate(()=>PlayroomNetworkLibrary.openRoom());
   }
   const firstTarget=await next.evaluate(()=>PlayroomNetworkLibrary.transferClient().id);
-  await host.evaluate(id=>{const b=PlayroomAppBridge,r=b.room();b.roomService.configure(r.id,r.ownerId,{firstPlayerMode:'assigned',firstParticipantId:id});b.renderLobby();},firstTarget);
-  for(const page of [next,other])await page.locator('[data-net-action=ready]').click();
+  if(game==='ludo')await host.evaluate(id=>{const b=PlayroomAppBridge,r=b.room();b.roomService.configure(r.id,r.ownerId,{firstPlayerMode:'assigned',firstParticipantId:id});b.renderLobby();},firstTarget);
+  else await host.evaluate(()=>{
+   const create=TabletopCore.createGame;
+   TabletopCore.createGame=(id,options)=>{
+    if(id!=='uno')return create(id,options);
+    const state=create(id,{...options,seed:17,firstPlayer:0,firstPlayerMode:'assigned',unoMode:'manual'}),d=state.data;
+    const hand=d.hands[0],play=TabletopCore.availableCommands(state,0).find(command=>command.type==='play'&&hand.some(card=>card.id===command.card&&/^\d+$/.test(String(card.value))));
+    if(!play)throw Error('Expected a playable number card');
+    const keep=[hand.find(card=>card.id===play.card),hand.find(card=>card.id!==play.card)];
+    d.drawPile.push(...hand.filter(card=>!keep.includes(card)));d.hands[0]=keep;
+    TabletopCore.validateState(state);window.handoffCard=play.card;return state;
+   };
+  });
+  for(const page of spectator?[other]:[next,other])await page.locator('[data-net-action=ready]').click();
   await host.locator('[data-command=lobby-ready]').click();await host.locator('[data-command=lobby-start]:not([disabled])').click();await host.locator('.table-shell.network-game').waitFor();await next.locator('.table-shell.network-game').waitFor();
-  const expected=await host.evaluate(()=>{const c=PlayroomNetworkLibrary.transferContext();return {room:c.room.id,owner:c.room.ownerId,seats:c.room.seats.map((s,i)=>[s.participantId,s.playerIndex??i]),target:c.peers[0].id,session:c.sessionId,revision:Number(document.querySelector('.network-game').dataset.revision)};});
+  if(game==='uno'){
+   phase='open-uno-window';
+   await host.locator('.layout-hand [data-entity="card-'+await host.evaluate(()=>handoffCard)+'"]').click();
+   await host.waitForFunction(()=>!!PlayroomNetworkLibrary.playerControlContext()?.snapshot.reactionWindows.find(w=>w.owner===0&&!w.protected));
+   report.reaction=await host.evaluate(()=>{
+    const previous=PlayroomNetworkLibrary.playerControlContext().snapshot;
+    // Hold only the new owner's presentation acknowledgement. The actual
+    // commands and acknowledgements below still traverse the RTC connection.
+    const acknowledge=PlayroomSessionClient.prototype.presentationReady;
+    PlayroomSessionClient.prototype.presentationReady=function(frame=this.snapshot){
+     if(frame.authorityEpoch===previous.authorityEpoch)return acknowledge.call(this,frame);
+     return new Promise(resolve=>{
+      window.handoffStaleReady=()=>acknowledge.call(this,previous);
+      window.handoffReady=async()=>{const receipt=await acknowledge.call(this,frame);resolve(receipt);return receipt;};
+     });
+    };
+    return {id:previous.reactionWindows.find(w=>w.owner===0).id,sourceEpoch:previous.authorityEpoch};
+   });
+  }
+  const expected=await host.evaluate(()=>{const c=PlayroomNetworkLibrary.transferContext();return {room:c.room.id,owner:c.room.ownerId,seats:c.room.seats.map((s,i)=>[s.participantId,s.playerIndex??i]),session:c.sessionId,revision:Number(document.querySelector('.network-game').dataset.revision)};});
   await other.evaluate(()=>{window.otherTransferText=[];PlayroomReliableChannel.bind(PlayroomNetworkLibrary.transferClient().channel).listen(event=>{try{const p=JSON.parse(event.data);if(p.kind==='host-transfer-v1')otherTransferText.push(p.text);}catch{}});});
-  const target=await next.evaluate(()=>PlayroomNetworkLibrary.transferClient().id);assert.equal(expected.target,target);
+  const targetButton=host.locator(`[data-host-transfer-target="${firstTarget}"]`);
+  const target=firstTarget;
   await host.evaluate(()=>PlayroomHostTransferUI.show());await host.screenshot({path:path.join(out,'select-390.png')});
-  await host.locator('[data-host-transfer-target]').first().click();phase='reject-playing-offer';await next.locator('[data-host-offer-open]').click();await active(next).locator('[data-host-offer-reject]').click();await host.waitForFunction(()=>PlayroomHostTransferUI.senderState()===null);
+  await targetButton.click();phase='reject-playing-offer';await next.locator('[data-host-offer-open]').click();await active(next).locator('[data-host-offer-reject]').click();await host.waitForFunction(()=>PlayroomHostTransferUI.senderState()===null);
   assert.equal(await next.evaluate(async id=>!!(await PlayroomNetworkLibrary.transferStore.readPrivate(id)).record,expected.session),false,'declined peer receives no private journal');
-  await other.evaluate(async()=>{const c=PlayroomNetworkLibrary.playerControlContext();const r=await c.call({type:'player-control',operation:'away',sessionId:c.snapshot.sessionId,authorityEpoch:c.snapshot.authorityEpoch,requestId:'handoff-away',expectedRevision:c.snapshot.playerControlRevision});if(!r.ok)throw Error(r.code);});
-  await host.evaluate(async()=>{const c=PlayroomNetworkLibrary.playerControlContext(),target=c.room.participants.find(p=>p.nickname==='Третий');const id=target?.id||c.room.participants.filter(p=>!p.bot&&p.id!==c.room.ownerId).at(-1).id;const r=await c.call({type:'player-control',operation:'bot',target:id,sessionId:c.snapshot.sessionId,authorityEpoch:c.snapshot.authorityEpoch,requestId:'handoff-bot',expectedRevision:c.snapshot.playerControlRevision});if(!r.ok)throw Error(r.code);});
+  if(game==='ludo'){
+   await other.evaluate(async()=>{const c=PlayroomNetworkLibrary.playerControlContext();const r=await c.call({type:'player-control',operation:'away',sessionId:c.snapshot.sessionId,authorityEpoch:c.snapshot.authorityEpoch,requestId:'handoff-away',expectedRevision:c.snapshot.playerControlRevision});if(!r.ok)throw Error(r.code);});
+   await host.evaluate(async()=>{const c=PlayroomNetworkLibrary.playerControlContext(),target=c.room.participants.find(p=>p.nickname==='Третий');const id=target?.id||c.room.participants.filter(p=>!p.bot&&p.id!==c.room.ownerId).at(-1).id;const r=await c.call({type:'player-control',operation:'bot',target:id,sessionId:c.snapshot.sessionId,authorityEpoch:c.snapshot.authorityEpoch,requestId:'handoff-bot',expectedRevision:c.snapshot.playerControlRevision});if(!r.ok)throw Error(r.code);});
+  }
   await next.evaluate(id=>window.trackedTransferSession=id,expected.session);
-  await host.evaluate(()=>PlayroomHostTransferUI.show());await host.locator('[data-host-transfer-target]').first().click();phase='accept-playing-offer';await next.locator('[data-host-offer-open]').click();await active(next).locator('[data-host-offer-accept]').waitFor();
+  await host.evaluate(()=>PlayroomHostTransferUI.show());await targetButton.click();phase='accept-playing-offer';await next.locator('[data-host-offer-open]').click();await active(next).locator('[data-host-offer-accept]').waitFor();
   await host.evaluate(()=>{const wire=PlayroomHostTransferUI.senderState().wire,request=wire.request.bind(wire);wire.request=(method,data,...args)=>method==='activate'?Promise.allSettled([request(method,data,...args),request(method,data,...args)]):request(method,data,...args);});await next.screenshot({path:path.join(out,'consent-390.png')});
   await active(next).locator('[data-host-offer-accept]').click();phase='activate-playing-host';
   await next.waitForFunction(()=>!!PlayroomNetworkLibrary.transferContext(),null,{timeout:60000});
   await host.waitForFunction(()=>!!PlayroomNetworkLibrary.transferClient(),null,{timeout:60000});
-  assert.equal(await next.evaluate(()=>PlayroomNetworkLibrary.playerControlContext().snapshot.playerControls.some(p=>p.bot)),true);
-  await other.waitForFunction(()=>PlayroomNetworkLibrary.playerControlContext()?.snapshot.playerControls.some(p=>p.bot));
-  await other.evaluate(async()=>{const c=PlayroomNetworkLibrary.playerControlContext(),r=await c.call({type:'player-control',operation:'return',sessionId:c.snapshot.sessionId,authorityEpoch:c.snapshot.authorityEpoch,requestId:'handoff-return',expectedRevision:c.snapshot.playerControlRevision});if(!r.ok)throw Error(r.code);});
-  await next.waitForFunction(()=>!PlayroomNetworkLibrary.playerControlContext().snapshot.playerControls.some(p=>p.bot));
+  if(game==='ludo'){
+   assert.equal(await next.evaluate(()=>PlayroomNetworkLibrary.playerControlContext().snapshot.playerControls.some(p=>p.bot)),true);
+   await other.waitForFunction(()=>PlayroomNetworkLibrary.playerControlContext()?.snapshot.playerControls.some(p=>p.bot));
+   await other.evaluate(async()=>{const c=PlayroomNetworkLibrary.playerControlContext(),r=await c.call({type:'player-control',operation:'return',sessionId:c.snapshot.sessionId,authorityEpoch:c.snapshot.authorityEpoch,requestId:'handoff-return',expectedRevision:c.snapshot.playerControlRevision});if(!r.ok)throw Error(r.code);});
+   await next.waitForFunction(()=>!PlayroomNetworkLibrary.playerControlContext().snapshot.playerControls.some(p=>p.bot));
+  }
   assert.equal(await next.evaluate(()=>handoffAuthorityStarts),1,'concurrent activation creates one authority');
   const actual=await next.evaluate(()=>{const c=PlayroomNetworkLibrary.transferContext();return {room:c.room.id,owner:c.room.ownerId,seats:c.room.seats.map((s,i)=>[s.participantId,s.playerIndex??i]),session:c.sessionId,revision:Number(document.querySelector('.network-game').dataset.revision)};});assert.equal(actual.revision,expected.revision,'host transfer does not create an extra game turn');assert.equal(actual.room,expected.room);assert.equal(actual.owner,target);assert.equal(actual.session,expected.session);assert.deepEqual(actual.seats,expected.seats);
   await other.waitForFunction(id=>PlayroomNetworkLibrary.transferClient()?.room.ownerId===id,target,{timeout:30000});
   assert.equal(await other.evaluate(()=>otherTransferText.join('').includes('\"archive\"')),false,'ordinary peer never receives full private archive');assert.equal(await other.evaluate(()=>otherTransferText.join('').includes('\"tokens\"')),false,'ordinary peer never receives private resume credentials');
+  if(spectator){
+   report.hostView=await next.evaluate(()=>{
+    const {room}=PlayroomNetworkLibrary.transferContext(),{snapshot}=PlayroomNetworkLibrary.playerControlContext();
+    return {role:room.participants.find(person=>person.id===room.ownerId).role,hostMode:room.hostMode,
+     viewer:snapshot.viewer,canDeclare:snapshot.independentActions.some(action=>action.type==='declare-uno')};
+   });
+   assert.deepEqual(report.hostView,{role:'spectator',hostMode:'table',viewer:-1,canDeclare:false});
+   assert.equal(await next.locator('.network-game [data-action*="declare-uno"]').count(),0);
+  }
+  if(game==='uno'){
+   phase='confirm-uno-window-in-new-epoch';
+   await host.waitForFunction(()=>typeof window.handoffReady==='function');
+   const windowState=await next.evaluate(id=>{
+    const s=PlayroomNetworkLibrary.playerControlContext().snapshot,w=s.reactionWindows.find(item=>item.id===id);
+    return {epoch:s.authorityEpoch,protected:w?.protected,owner:w?.owner};
+   },report.reaction.id);
+   assert.notEqual(windowState.epoch,report.reaction.sourceEpoch);
+   assert.equal(windowState.owner,0);assert.equal(windowState.protected,true);
+   const stale=await host.evaluate(()=>handoffStaleReady());assert.equal(stale.code,'WRONG_EPOCH');
+   const receipt=await host.evaluate(()=>handoffReady());assert.equal(receipt.ok,true);
+   report.declarationControl=await host.evaluate(()=>{
+    const s=PlayroomNetworkLibrary.playerControlContext().snapshot;
+    return {viewer:s.viewer,turn:s.state.turn,offered:s.independentActions.some(action=>action.type==='declare-uno'),
+     controls:[...document.querySelectorAll('[data-action*="declare-uno"]')].map(button=>({disabled:button.disabled,classes:button.className})),
+     activeModal:document.querySelector('#modal-root [data-surface-state=active]')?.className};
+   });
+   await host.locator('.network-game [data-action*="declare-uno"]:enabled').click();
+   await next.waitForFunction(rev=>{
+    const s=PlayroomNetworkLibrary.playerControlContext()?.snapshot;
+    return s?.revision===rev+1&&s.reactionWindows.length===0;
+   },expected.revision);
+   report.reaction={...report.reaction,...windowState,rejected:stale.code,declared:expected.revision+1};
+  }
   phase='old-host-close-and-chat';await host.close();
   await next.evaluate(async()=>{const ctx=PlayroomNetworkLibrary.chatContext();await ctx.call({type:'room-chat-send',id:crypto.randomUUID(),body:'После передачи',scope:'room'});});
   await other.evaluate(()=>PlayroomRoomChatUI.show());await other.locator('[data-room-chat-messages]').getByText('После передачи',{exact:true}).waitFor();
   phase='close-room-chat';await other.locator('.game-chat-panel .modal-head [data-command=close-modal]').click();await other.locator('.game-chat-panel:not([data-ui-surface-exit])').waitFor({state:'hidden'});
   await next.screenshot({path:path.join(out,'after.png')});
   const revision=Number(await next.locator('.network-game').getAttribute('data-revision'));
-  phase='continue-game';await next.locator('.network-game [data-action]').first().click();
-  await other.waitForFunction(before=>Number(document.querySelector('.network-game')?.dataset.revision)>before,revision);
-  assert.deepEqual(errors,[]);assert.deepEqual(supabaseRequests,[],'playing handoff never calls Supabase');report.room=actual;report.action={before:revision,after:Number(await other.locator('.network-game').getAttribute('data-revision'))};report.authorityStarts=await next.evaluate(()=>handoffAuthorityStarts);report.ordinaryPrivateArchive=false;
+  phase='continue-game';
+  // The isolated Ludo scene owns its dice through SDK targets. Archived
+  // 0.21 builds expose the same roll through a legacy action attribute.
+  const [player,observer]=spectator?[other,next]:[next,other];
+  const table=player.locator('.network-game');
+  const control=game==='uno'?table.locator('.sdk-table-stock:enabled'):
+   await table.locator('[data-sdk-player-scene]').count()?table.locator('.sdk-die:enabled'):table.locator('[data-action]:enabled');
+  await control.first().click();
+  await observer.waitForFunction(before=>Number(document.querySelector('.network-game')?.dataset.revision)>before,revision);
+  assert.deepEqual(errors,[]);assert.deepEqual(supabaseRequests,[],'playing handoff never calls Supabase');report.room=actual;report.action={before:revision,after:Number(await observer.locator('.network-game').getAttribute('data-revision'))};report.authorityStarts=await next.evaluate(()=>handoffAuthorityStarts);report.ordinaryPrivateArchive=false;
  }catch(error){report.failure={phase,error:error.message};throw error;}finally{report.engine=browser.browserType().name();report.version=browser.version();report.errors=errors;report.nativeSupabaseRequests=supabaseRequests.length;fs.writeFileSync(path.join(out,'report.json'),JSON.stringify(report,null,2));await browser.close();await server.close();}
-});
+};}
+
+test('planned host transfer: three real RTC players change host, keep seats and continue after old device closes',{timeout:120000},playingTransfer('ludo'));
+test('an acknowledged UNO reaction survives a real RTC host transfer to a fresh epoch',{timeout:120000},playingTransfer('uno'));
+test('an open UNO reaction survives a real RTC host transfer to a spectator',{timeout:120000},playingTransfer('uno',{spectator:true}));
 
 test('handoff storage stages privately, fences reload, keeps receipts and permits a later transfer back',{timeout:30000},async()=>{
  const server=await serveBrowserFixture(root),browser=await chromium.launch({headless:true,executablePath:executablePath(),args:['--no-sandbox','--disable-background-networking']});

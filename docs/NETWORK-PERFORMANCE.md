@@ -4,11 +4,26 @@
 
 A client sends an intent with a receipt ID and expected revision. Authority validates actor, audience and current reaction/control gates, persists the transition and receipt, and then acknowledges it. Receipt delivery does not wait for the complete outbound fanout. The client waits up to 750 ms for the corresponding pushed revision before requesting one shared checkpoint; a normal early ACK creates no extra snapshot request. Durable failures never acknowledge a successful move.
 
-The host retains projected facts for at most two state identities and 128 audience/metadata variants per state. Reaction clocks, paused/away/bot gates and allowed commands are checked on every read. Only protocol-owned detached immutable JSON may share descendants or canonical serialization results. The canonical cache is capped at 2048 entries / 8 MiB; SHA-256 still covers the complete authorized semantic position and event chain. Private domain state/RNG never enters this cache or the wire position.
+The host retains projected facts for at most two state identities and 128 audience/metadata variants per state. Reaction clocks, paused/away/bot gates and allowed commands are checked on every frame build. The last two public timelines have one protocol-owned copy each, reusable across audiences and revisions while their history objects are unchanged. Each audience has its own authorized scene, model and events. A prepared scene can be reused when the allowed commands, typed inputs and participant labels still match. The local application can use the last published frame after checking its revisions and the absence of an active clock or reaction window. The canonical cache is capped at 2048 entries / 8 MiB. SHA-256 covers the complete authorized semantic position and event chain. Private domain state and RNG stay within the host.
 
 Projection format 3 uses short typed operations with a shared prefix length and a typed suffix path, including indexed equal-length array changes and prefix/suffix splices for length changes. Receivers validate operation/path/count bounds and full resulting signatures before accepting a position. A gap requires a checkpoint; there is no legacy wire decoder. Pack scenes, effects and audio are reconstructed locally from authorized model facts and the identical pack version.
 
+For compact SDK frames, Authority sends the viewer's event journal beside
+the model fields. Its rules VM builds the model fields without processing
+that journal a second time. The receiving host attaches the authorized facts
+before calling the pack's local data and choice hooks. One VM call returns
+the derived data, available commands and any reaction descriptors in command
+order. The host reuses the facts it already owns and applies the live
+reaction gates. Read-only frames still get derived data for display and skip
+choice evaluation. Scenes, event checkpoints and the retained model reuse the
+facts for the same audience.
+
 `historyRange` follows the server's bounded `next` cursor until the requested range is complete. A singleton request is reserved for an explicitly oversized first frame. Concurrent reads share pending frames; repeated reads use the existing bounded local cache. A failed or foreign-audience response cannot become a valid cached frame. Historical replies do not move the live event cursor.
+
+The memory cache accounts for the full UTF-8 JSON size of each read-only
+history frame. It remembers the byte counts of immutable scenes, event
+lists and individual events by reference. The envelope still counts each
+serialized occurrence and charges new events when they enter the journal.
 
 Reliable RPC uses one bounded binary JSON codec (PRC3) for every game: typed request/response/error envelopes, variable-length integers, UTF-8 text, full 16-byte UUIDs and 32-byte SHA-256 digests. No digest bits are discarded. Large encoded messages use PRW3 binary chunks with a 24-byte header and the existing backpressure/size limits (4 MiB per message, four unfinished messages / 8 MiB reassembly, 30 s expiry, SCTP-safe 16 KiB packets). Invalid/conflicting chunks close the pipe. Receipt IDs still make retries idempotent; no legacy JSON wire decoder is shipped.
 
@@ -33,7 +48,13 @@ Continuous drawing uses the existing common Realtime SDK rather than enumerated 
 
 ## Authorized local input (SDK feature local-input-v1)
 
+The engine reuses the full immutable player projection for action labels and for matching a command that came from that view. A replay or an actor without a prepared view resolves commands directly in the rules runtime. The reducer still validates the chosen command. Reaction descriptors are cached by immutable state. Authority applies current deadlines and grants when building a frame and again when accepting input.
+
 All companion packs expose `localChoices(projection)`. The wire model has `choicesVersion:1`, authorized data and identity, but no `actions`, derived previews or duplicated revision. `localData` reconstructs optional geometry/scores/hints; `localReaction` plus authority-supplied control deadlines reconstructs disabled/independent choices. Table filtering precedes command validation. Neither hidden hands nor RNG is reconstructed. Host validation remains authoritative and does not trust client choices.
+
+If host permissions remove input, the recipient uses the same restricted scene adapter as Authority. Per-card turn previews follow the remaining card interactions. The shared next-player indicator can still appear in a read-only or historical frame.
+
+For SDK definitions that send explicit commands and typed input schemas, Authority filters those controls for the audience. The wire frame carries the authorized journal once. The recipient builds the scene and event checkpoints with the same immutable projection that supplies input. An explicit Table frame carries its public commands and schemas.
 
 `draftSpec` / `draftProjection` declare bounded local sequences or coalesced selectors. The application stages only commands currently legal in its authorized projection. Mage planning sends two component intents as one batch; Yatzy toggles may join a roll/score or flush after 50 ms. The host checks every intermediate selector (no RNG, events, turn advance or finish), validates the final action, then persists one transaction/revision. Drafts are session/epoch/audience/actor/decision-window bound, survive reconnect in a bounded local store, and never enter played history. Different participants' simultaneous readiness does not invalidate a compatible own draft.
 

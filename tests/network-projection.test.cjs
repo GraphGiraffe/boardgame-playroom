@@ -32,7 +32,7 @@ test('RTC always carries the compact format; client reconstructs it before rende
  const W=require('../app/transports/webrtc.js'),Client=require('../app/session-client.js');
  class Channel extends EventTarget{constructor(){super();this.readyState='open';this.sent=[];}send(data){this.sent.push(require('../application/wire-codec.js').decode(data));queueMicrotask(()=>this.peer.dispatchEvent(new MessageEvent('message',{data})));}close(){this.readyState='closed';this.dispatchEvent(new Event('close'));}}
  const host=new Channel(),guest=new Channel();host.peer=guest;guest.peer=host;
- const session=new Session(E,'uno',{seed:17,players:[{name:'Host'},{name:'Guest'}]}),authority=new Authority(session),binding=authority.connect(1),close=W.serve(host,binding),transport=W.client(guest),client=new Client(transport);
+ const session=new Session(E,'tictactoe',{seed:17,players:[{name:'Host'},{name:'Guest'}]}),authority=new Authority(session),binding=authority.connect(1),close=W.serve(host,binding),transport=W.client(guest),client=new Client(transport);
  try{await transport.ready();await client.refresh();
  const wire=host.sent.find(message=>message.kind==='response').result;
  assert.equal(wire.kind,'projection');assert.equal(wire.mode,'checkpoint');assert.equal(wire.body.eventFormat,Projection.format);assert(!Object.hasOwn(wire,'cues'));assert(!Object.hasOwn(wire.body?.state||wire.state,'events'));assert.deepEqual(client.snapshot.events,binding.snapshot().events);

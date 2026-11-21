@@ -2,7 +2,7 @@
 const {test}=require('node:test');
 const assert=require('node:assert/strict');
 const path=require('node:path'),fs=require('node:fs'),crypto=require('node:crypto');
-const {chromium, executablePath} = require('../scripts/codex/browser.cjs');
+const {chromium, executablePath, launchTestBrowser} = require('../scripts/codex/browser.cjs');
 const root=path.resolve(__dirname,'..'),motionSource=process.env.PLAYROOM_MOTION_OVERRIDE||path.join(root,'core/motion.js');
 async function captureMotionEvidence(page,name,{fraction=null,...details}={}){
  const out=process.env.PLAYROOM_MOTION_EVIDENCE_DIR;if(!out)return;
@@ -17,6 +17,140 @@ async function captureMotionEvidence(page,name,{fraction=null,...details}={}){
  if(fraction!==null)await page.evaluate(()=>{for(const animation of document.getAnimations())if(animation.effect?.target?.closest('.playroom-motion-layer'))animation.play();});
 }
 
+test('Request lift and return keep their first pose after a busy frame',{timeout:30000},async t=>{
+  const browser=await launchTestBrowser(process.env.PLAYROOM_TEST_BROWSER||'chromium');
+  t.after(()=>browser.close());
+  const page=await browser.newPage({reducedMotion:'no-preference'});
+  await page.setContent('<div class="scene"><div class="hand-track"><div data-entity="card-c1" style="width:66px;height:98px">Card</div></div><div data-player-index="1"><div class="mini-hand"><div class="piece-back" style="width:30px;height:44px">Back</div></div></div></div>');
+  await page.addStyleTag({path:path.join(root,'core/motion.css')});
+  await page.addScriptTag({path:path.join(root,'core/vector-art.js')});
+  await page.addScriptTag({path:path.join(root,'core/game-components.js')});
+  await page.addScriptTag({path:motionSource});
+  const result=await page.evaluate(async()=>{
+    window.PlayroomViews={reveal:()=>'<div>Card</div>'};
+    const animate=Element.prototype.animate,firstFrames=[];
+    Element.prototype.animate=function(...args){
+      const animation=animate.apply(this,args);
+      if(this.closest('.playroom-request-layer')){
+        const at=performance.now();
+        // Stand in for the shell's expensive layout work in the same frame.
+        while(performance.now()-at<140){}
+        const observe=()=>requestAnimationFrame(()=>{
+          if(animation.pending)return observe();
+          firstFrames.push({start:animation.startTime,time:animation.currentTime,
+                            progress:animation.effect.getComputedTiming().progress,
+                            elapsed:performance.now()-at,phase:this.closest('.playroom-request-layer')?.dataset.requestPhase});
+        });
+        // Register after the motion owner has had a chance to queue its frame.
+        queueMicrotask(observe);
+      }
+      return animation;
+    };
+    try{
+      await new Promise(requestAnimationFrame);
+      const request=PlayroomMotion.beginRequest({viewer:0},0,{id:'c1'},240);
+      await request.ready;
+      await request.finish();
+      const own=firstFrames.splice(0);
+      const opponent=PlayroomMotion.beginRequest({viewer:0},1,{id:'c2'},240);
+      await opponent.ready;
+      await opponent.finish();
+      Element.prototype.animate=animate;
+      const cancelled=PlayroomMotion.beginRequest({viewer:0},0,{id:'c1'},240);
+      cancelled.cancel();
+      await cancelled.ready;
+      return {own,opponent:firstFrames,restored:getComputedStyle(document.querySelector('[data-entity]')).visibility,
+              layers:document.querySelectorAll('.playroom-request-layer').length};
+    }finally{Element.prototype.animate=animate;}
+  });
+  t.diagnostic(JSON.stringify(result));
+  assert.deepEqual(result.own.map(row=>row.phase),['lift','return']);
+  assert.deepEqual(result.opponent.map(row=>row.phase),['lift','show','show','show','return','return','return','return']);
+  assert([...result.own,...result.opponent].every(row=>Number.isFinite(row.progress)&&row.progress<.3),
+         'the first available frame must show the initial part of each movement');
+  for(const faces of [result.opponent.slice(1,4),result.opponent.slice(4,7)])
+    assert.equal(new Set(faces.map(row=>row.start)).size,1,'turning faces and movement share one clock');
+  assert.equal(result.restored,'visible');
+  assert.equal(result.layers,0);
+});
+
+test('A paused presentation holds a prepared stock flight before its first frame',{timeout:30000},async t=>{
+  const browser=await launchTestBrowser(process.env.PLAYROOM_TEST_BROWSER||'chromium');
+  t.after(()=>browser.close());
+  const page=await browser.newPage({reducedMotion:'no-preference'});
+  await page.setContent('<div class="scene"><div data-motion-stock style="width:60px;height:84px"><div class="piece-back" style="width:100%;height:100%"></div></div><div class="hand-track"></div></div>');
+  await page.addStyleTag({path:path.join(root,'core/motion.css')});
+  for(const file of ['core/vector-art.js','core/game-components.js','presentation/plan-player.js','presentation/scheduler.js'])
+    await page.addScriptTag({path:path.join(root,file)});
+  await page.addScriptTag({path:motionSource});
+  const result=await page.evaluate(async()=>{
+    const player=new PlayroomPresentationScheduler().track('prepared-stock');
+    const shot=PlayroomMotion.capture({actor:0,viewer:0,action:{type:'draw'}});
+    document.querySelector('.hand-track').innerHTML='<div data-entity="card-new" style="width:60px;height:84px">Card</div>';
+    const play=()=>player.play({id:'stock',groups:[{duration:0,cues:[{id:'draw',kind:'transfer'}]}]},{
+      effect:(_,context)=>PlayroomMotion.play(shot,{duration:600,draws:[{player:0,count:1,from:'stock'}],context})
+    });
+    const pending=play(),flight=document.querySelector('.playroom-motion-flight[data-motion-kind=draw]');
+    const animation=flight?.getAnimations()[0];
+    if(!animation)throw Error('Expected a prepared stock flight');
+    player.pause();
+    player.setRate(2);
+    for(let n=0;n<5;n++)await new Promise(requestAnimationFrame);
+    const paused={time:animation.currentTime,state:animation.playState};
+    player.resume();
+    await new Promise(requestAnimationFrame);
+    const resumedRate=animation.playbackRate;
+    const status=await pending;
+    return {paused,resumedRate,status,layers:document.querySelectorAll('.playroom-motion-layer').length};
+  });
+  t.diagnostic(JSON.stringify(result));
+  assert.deepEqual(result.paused,{time:0,state:'paused'});
+  assert.equal(result.resumedRate,2);
+  assert.deepEqual(result.status,{status:'complete'});
+  assert.equal(result.layers,0);
+});
+
+test('Deferred capture only measures miniature cards for the committed recipient',{timeout:30000},async t=>{
+  const browser=await launchTestBrowser(process.env.PLAYROOM_TEST_BROWSER||'chromium');
+  t.after(()=>browser.close());
+  const page=await browser.newPage();
+  await page.setContent('<style>.mini-hand{display:flex}.piece-back{width:30px;height:44px}</style><div class="scene"></div>');
+  for(const file of ['core/vector-art.js','core/game-components.js'])await page.addScriptTag({path:path.join(root,file)});
+  await page.addScriptTag({path:motionSource});
+  const result=await page.evaluate(()=>{
+    const scene=document.querySelector('.scene'),reads=[];
+    for(let player=1;player<=3;player++){
+      const panel=document.createElement('div');
+      panel.dataset.playerIndex=player;
+      panel.dataset.handCount=7;
+      panel.innerHTML='<div class="mini-hand">'+ '<div class="piece-back"></div>'.repeat(7)+'</div>';
+      scene.append(panel);
+      reads.push(0);
+      for(const card of panel.querySelector('.mini-hand').children){
+        const rect=card.getBoundingClientRect.bind(card);
+        card.getBoundingClientRect=()=>{reads[player-1]++;return rect();};
+      }
+    }
+    const shot=PlayroomMotion.capture({actor:0,viewer:0,action:{type:'ask'},deferDepartures:true});
+    const captured=[...reads];
+    const draws=[{player:0,count:1,from:'stock'},{player:2,count:1,from:'stock'}];
+    shot.prepareTransfers(draws);
+    shot.prepareTransfers(draws);
+    const committed=[...reads];
+    const rects=shot.handRects.get(2),cards=scene.querySelector('[data-player-index="2"] .mini-hand').children;
+    cards[0].style.position='relative';
+    cards[0].style.left='20px';
+    PlayroomMotion.prepare(shot,draws);
+    const held={offset:cards[0].getBoundingClientRect().x-rects[0].x,keys:[...shot.handRects.keys()],rects:rects.length};
+    PlayroomMotion.releaseStage();
+    return {captured,committed,held,restored:cards[0].style.translate};
+  });
+  t.diagnostic(JSON.stringify(result));
+  assert.deepEqual(result.captured,[0,0,0]);
+  assert.deepEqual(result.committed,[0,7,0]);
+  assert.deepEqual(result.held,{offset:0,keys:[2],rects:7});
+  assert.equal(result.restored,'');
+});
 
 test('Flip backs remain visible inside their clones and draws keep the stock aspect ratio',{timeout:30000},async()=>{
   const browser=await chromium.launch({headless:true,executablePath:executablePath(),args:['--no-sandbox']});
@@ -42,6 +176,20 @@ test('Flip backs remain visible inside their clones and draws keep the stock asp
       const piece=document.querySelector('.playroom-motion-piece[data-motion-kind=draw]'),samples=[];
       for(const fraction of [.05,.5,.95]){for(const a of document.getAnimations()){a.pause();a.currentTime=a.effect.getTiming().duration*fraction;}const r=piece.getBoundingClientRect();samples.push(r.width/r.height);}
       PlayroomMotion.cancel();await draw;
+      const requestFrame=window.requestAnimationFrame;
+      const start=new Promise(resolve=>{
+       window.requestAnimationFrame=callback=>requestFrame.call(window,time=>{
+        const now=performance.now();
+        callback(time-120);
+        const flight=document.querySelector('.playroom-motion-flight[data-motion-kind=draw]');
+        resolve({now,start:flight.getAnimations()[0].startTime});
+       });
+      });
+      let delayed;
+      try{delayed=PlayroomMotion.play(shot,{duration:500,draws:[{player:1,count:1,from:'stock'}]});}
+      finally{window.requestAnimationFrame=requestFrame;}
+      const playbackClock=await start;
+      PlayroomMotion.cancel();await delayed;
       const first=document.createElement('section'),second=document.createElement('section');
       first.append(document.querySelector('.scene'));second.append(first.firstElementChild.cloneNode(true));document.body.append(first,second);
       second.querySelector('.stock-button').style.left='200px';
@@ -51,13 +199,14 @@ test('Flip backs remain visible inside their clones and draws keep the stock asp
       const simultaneous=document.querySelectorAll('.playroom-motion-layer').length;
       a.cancel();await pa;const surviving=document.querySelectorAll('.playroom-motion-layer').length;
       b.cancel();await pb;
-      return {copies,sides,closing,sourceRatio:shot.stock.width/shot.stock.height,samples,layers:document.querySelectorAll('.playroom-motion-layer').length,
+      return {copies,sides,closing,sourceRatio:shot.stock.width/shot.stock.height,samples,playbackClock,layers:document.querySelectorAll('.playroom-motion-layer').length,
         surface:{delta:sb.stock.x-sa.stock.x,simultaneous,surviving,missing:missing.capture().entities.size}};
     });
     assert.deepEqual(result.copies,{flips:1,hands:0,sources:[1]});
     assert.deepEqual(result.sides,['visible','visible']);
     assert.deepEqual(result.closing,{faceInline:'',backVisible:'visible',backTransform:'none',reopened:'visible'},'closing back remains opaque and retained face can be authored again');
     assert(result.samples.every(ratio=>Math.abs(ratio-result.sourceRatio)<.01),JSON.stringify(result));
+    assert(result.playbackClock.start>=result.playbackClock.now-2,'a stale frame timestamp cannot shorten the visible draw');
     assert.equal(result.layers,0);
     assert.deepEqual(result.surface,{delta:100,simultaneous:2,surviving:1,missing:0});
   }finally{await browser.close();}
@@ -88,6 +237,11 @@ test('Motion effects move only public pieces and clean up at completion or cance
       const result=await page.evaluate(async()=>{
         const piece=document.querySelector('.token');piece.dataset.entity='stone-copy:2';
         const scene={zones:[{id:'field',kind:'board'}],objects:[{ref:{namespace:'stone',id:'copy:2'},zone:'field'}]};
+        piece.dataset.dropPiece='selected-source';
+        const targeted=PlayroomMotion.capture({sceneModel:scene}).entities.get('stone-copy:2');
+        const undeclared=PlayroomMotion.capture({sceneModel:{...scene,objects:[]}}).entities.get('stone-copy:2');
+        const targets={public:targeted.public,board:targeted.board,clone:!!targeted.departureClone,undeclaredPublic:undeclared.public,undeclaredBoard:undeclared.board,undeclaredClone:!!undeclared.departureClone};
+        delete piece.dataset.dropPiece;
         const retained=PlayroomMotion.capture({sceneModel:scene,deferDepartures:true});retained.prepareDepartures(scene);
         const removed=PlayroomMotion.capture({sceneModel:scene,deferDepartures:true});removed.prepareDepartures({...scene,objects:[]});
         const selective={retained:!!retained.entities.get('stone-copy:2').departureClone,removed:!!removed.entities.get('stone-copy:2').departureClone};
@@ -103,16 +257,36 @@ test('Motion effects move only public pieces and clean up at completion or cance
         const noScene=PlayroomMotion.capture();piece.style.left='20px';
         const ignored=PlayroomMotion.play(noScene,{duration:500,draws:[]});
         const guessed=document.querySelectorAll('.playroom-motion-flight[data-motion-kind=move]').length;await ignored;
-        return {selective,start:[start.x,start.y],finish:[finish.x,finish.y],held:[held.x,held.y],repeated:[repeated.x,repeated.y],restored:[restored.x,restored.y],cancelled:[cancelled.x,cancelled.y],flights,guessed};
+        return {targets,selective,start:[start.x,start.y],finish:[finish.x,finish.y],held:[held.x,held.y],repeated:[repeated.x,repeated.y],restored:[restored.x,restored.y],cancelled:[cancelled.x,cancelled.y],flights,guessed};
       });
+      assert.deepEqual(result.targets,{public:true,board:true,clone:true,undeclaredPublic:false,undeclaredBoard:false,undeclaredClone:false});
       assert.deepEqual(result.selective,{retained:false,removed:true});
       assert.deepEqual(result.held,result.start);assert.deepEqual(result.repeated,result.start);
       assert.deepEqual(result.restored,result.finish);assert.deepEqual(result.cancelled,result.finish);
       assert.equal(result.flights,1);assert.equal(result.guessed,0);
     });
     await check('Arc card pose includes independent rotation without resizing the face',async page=>{
-      const pose=await page.evaluate(()=>{const card=document.querySelector('#source');card.style.rotate='-7deg';card.style.translate='0 4px';const snap=PlayroomMotion.capture({sceneModel:window.motionScene,actor:0,viewer:0,action:{type:'play',card:'c1'}});return snap.entities.get('card-c1').pose;});
+      const {pose,next,reads,rectReads,parentReads}=await page.evaluate(()=>{
+        const card=document.querySelector('#source'),hand=card.closest('.hand-track');
+        card.style.rotate='-7deg';card.style.translate='0 4px';
+        const sample=()=>PlayroomMotion.capture({sceneModel:window.motionScene,actor:0,viewer:0,action:{type:'play',card:'c1'},deferDepartures:true}).entities.get('card-c1').pose;
+        const computed=window.getComputedStyle,rect=hand.getBoundingClientRect;
+        const parent=Object.getOwnPropertyDescriptor(Node.prototype,'parentElement');
+        let reads=0,rectReads=0,parentReads=0;
+        window.getComputedStyle=function(node,...args){if(node===hand)reads++;return computed.call(this,node,...args);};
+        hand.getBoundingClientRect=function(){rectReads++;return rect.call(this);};
+        Object.defineProperty(hand,'parentElement',{configurable:true,get(){parentReads++;return parent.get.call(this);}});
+        let pose;
+        try{pose=sample();}finally{
+          window.getComputedStyle=computed;delete hand.getBoundingClientRect;delete hand.parentElement;
+        }
+        hand.style.rotate='11deg';
+        return {pose,next:sample(),reads,rectReads,parentReads};
+      });
       assert(Math.abs(pose.angle+7)<.001);assert(Math.abs(pose.width-66)<.1);assert(Math.abs(pose.height-98)<.1);
+      assert.equal(reads,1,'all cards and origins share the same hand style within one capture');
+      assert.deepEqual({rectReads,parentReads},{rectReads:1,parentReads:2},'clipping, departure and origin share one measured hand pose');
+      assert(Math.abs(next.angle-4)<.001,'a later capture reads the new ancestor rotation');
     });
     await check('Rotated hands preserve the complete frozen SVG back during draw and cancel on resize',async page=>{
       const result=await page.evaluate(async()=>{
@@ -189,12 +363,22 @@ test('Motion effects move only public pieces and clean up at completion or cance
         stage.dataset.motionSequence=JSON.stringify({trigger:'roll',entity:{namespace:'token',id:'0'},player:0,counter:'position',origin:{anchor:'cell-0',label:'Start'},steps:[{anchor:'cell-1',label:'Cell 1'},{anchor:'cell-2',label:'Cell 2'},{anchor:'cell-3',label:'Cell 3'}],jump:{anchor:'cell-8',label:'Cell 8'}});
         const snapshot=PlayroomMotion.capture({sceneModel:window.motionScene,actor:0,viewer:0,action:{type:'roll'}}),counter=document.querySelector('[data-motion-counter]');
         const before={w:document.querySelector('.scene').scrollWidth,h:document.querySelector('.scene').scrollHeight};
-        const promise=PlayroomMotion.play(snapshot,{duration:120,settle:90}),flight=document.querySelector('[data-motion-kind="route"]'),animation=flight.getAnimations()[0],frames=animation.effect.getKeyframes(),timing=animation.effect.getTiming();
+        const scene=document.querySelector('.scene'),query=scene.querySelectorAll;
+        let anchorScans=0;
+        scene.querySelectorAll=function(selector){if(selector==='[data-motion-anchor]')anchorScans++;return query.call(this,selector);};
+        const promise=PlayroomMotion.play(snapshot,{duration:120,settle:90}),flight=document.querySelector('[data-motion-kind="route"]'),animation=flight.getAnimations()[0],frames=animation.effect.getKeyframes(),timing=animation.effect.getTiming(),startupScans=anchorScans;
+        const oldAnchor=board.querySelector('[data-motion-anchor="cell-2"]'),newAnchor=oldAnchor.cloneNode();
+        newAnchor.style.left='73px';oldAnchor.replaceWith(newAnchor);
+        window.dispatchEvent(new Event('resize'));
+        const resized=animation.effect.getKeyframes(),resizeScans=anchorScans-startupScans;
+        delete scene.querySelectorAll;
         const initial=counter.textContent,labels=[];const observer=new MutationObserver(()=>labels.push(counter.textContent));observer.observe(counter,{childList:true,subtree:true});
         const sizes=[];await new Promise(resolve=>{const sample=()=>{sizes.push({w:document.querySelector('.scene').scrollWidth,h:document.querySelector('.scene').scrollHeight,frame:counter.querySelectorAll('svg circle').length});if(document.querySelector('.playroom-motion-layer'))requestAnimationFrame(sample);else resolve();};sample();});await promise;observer.disconnect();
-        return {initial,labels,before,sizes,offsets:frames.map(f=>f.offset),duration:timing.duration,final:counter.textContent,layers:document.querySelectorAll('.playroom-motion-layer').length,active:document.querySelector('.player-panel.is-turn').dataset.playerIndex};
+        return {initial,labels,before,sizes,offsets:frames.map(f=>f.offset),duration:timing.duration,final:counter.textContent,layers:document.querySelectorAll('.playroom-motion-layer').length,active:document.querySelector('.player-panel.is-turn').dataset.playerIndex,startupScans,resizeScans,previousStep:frames[3].transform,resizedStep:resized[3].transform};
       });
       assert.equal(result.initial,'Start');assert.deepEqual([...new Set(result.labels)],['Cell 1','Cell 2','Cell 3','Cell 8']);assert.equal(result.duration,420);
+      assert.equal(result.startupScans,1);assert.equal(result.resizeScans,1);
+      assert.notEqual(result.resizedStep,result.previousStep,'a replaced anchor supplies the new keyframe');
       assert.deepEqual(result.offsets.map(x=>Math.round(x*420)),[0,120,150,180,210,300,420]);assert(result.sizes.every(s=>s.w===result.before.w&&s.h===result.before.h));assert(result.sizes.every(s=>s.frame===1),'counter frame survives every route step');assert.equal(result.final,'Cell 8');assert.equal(result.layers,0);assert.equal(result.active,'1');
     });
     await check('A final +4 play precedes four staggered hidden-opponent stock transfers',async page=>{
@@ -210,10 +394,16 @@ test('Motion effects move only public pieces and clean up at completion or cance
       await page.evaluate(()=>flight);assert(await page.evaluate(()=>elapsed)>=580);assert.equal(await page.locator('.playroom-motion-layer').count(),0);
     });
     await check('An own draw travels as a back and reveals the actual card only on arrival',async page=>{
-      await page.evaluate(()=>{
+      const unrelatedHandReads=await page.evaluate(()=>{
         const snap=PlayroomMotion.capture({sceneModel:window.motionScene,actor:0,viewer:0,action:{type:'draw'}});drawScene('draw');const token=document.querySelector('.token');token.style.left='20px';token.style.top='180px';
+        const hand=document.querySelector('.mini-hand'),measure=hand.getBoundingClientRect;
+        let reads=0;
+        hand.getBoundingClientRect=()=>{reads++;return measure.call(hand);};
         window.flight=PlayroomMotion.play(snap,{duration:400,draws:[{player:0,count:1,from:'stock'}]});
+        delete hand.getBoundingClientRect;
+        return reads;
       });
+      assert.equal(unrelatedHandReads,0,'an exact arrival does not measure other hands for fallback geometry');
       const destination=page.locator('.scene [data-entity="card-new"]'),back=page.locator('.playroom-motion-piece[data-motion-kind=draw]');assert.equal(await back.count(),1);assert.doesNotMatch(await back.textContent(),/NEW/);assert.equal(await destination.evaluate(el=>getComputedStyle(el).visibility),'hidden');
       await page.evaluate(()=>flight);assert.equal(await destination.evaluate(el=>getComputedStyle(el).visibility),'visible');assert.equal(await page.locator('.playroom-motion-layer').count(),0);
       const hands=await page.evaluate(async()=>{
@@ -225,7 +415,16 @@ test('Motion effects move only public pieces and clean up at completion or cance
         const visible=()=>[own,extra].map(el=>getComputedStyle(el).visibility);
         const existing=document.querySelector('[data-entity="card-c1"]'),oldX=shot.entities.get('card-c1').rect.x;
         existing.style.left='35px';const expandedX=existing.getBoundingClientRect().x;
-        PlayroomMotion.prepare(shot,draws);const pending=visible(),heldX=existing.getBoundingClientRect().x;
+        const sibling=existing.cloneNode(true);sibling.dataset.entity='card-other';sibling.style.left='73px';existing.parentElement.append(sibling);
+        const operations=[],rect=Element.prototype.getBoundingClientRect,write=CSSStyleDeclaration.prototype.setProperty;
+        for(const [card,tag] of [[existing,'first'],[sibling,'second']])card.getBoundingClientRect=()=>{operations.push('read:'+tag);return rect.call(card);};
+        CSSStyleDeclaration.prototype.setProperty=function(name,...rest){
+          if(name==='translate'&&(this===existing.style||this===sibling.style))operations.push(this===existing.style?'write:first':'write:second');
+          return write.call(this,name,...rest);
+        };
+        try{PlayroomMotion.prepare(shot,draws);}finally{CSSStyleDeclaration.prototype.setProperty=write;delete existing.getBoundingClientRect;delete sibling.getBoundingClientRect;}
+        if(operations.join()!=='read:first,read:second,write:first,write:second')throw Error('Unbatched hand geometry: '+operations.join());
+        const pending=visible(),heldX=existing.getBoundingClientRect().x;
         PlayroomMotion.prepare(shot,draws);const heldAgain=existing.getBoundingClientRect().x;
         if(Math.abs(heldX-oldX)>1||Math.abs(heldAgain-oldX)>1)throw Error('Hand shifted before answer');
         const flight=PlayroomMotion.play(shot,{duration:160,draws});const moving=visible();
@@ -236,12 +435,23 @@ test('Motion effects move only public pieces and clean up at completion or cance
       await page.evaluate(async()=>{
         drawScene();const source=document.querySelector('[data-player-index="1"]'),hand=source.querySelector('.mini-hand');
         source.dataset.handCount='2';hand.append(hand.firstElementChild.cloneNode(true));
-        const shot=PlayroomMotion.capture({viewer:0,actor:0,action:{type:'ask'}});
-        drawScene('draw');const current=document.querySelector('[data-player-index="1"] .mini-hand');
+        const shot=PlayroomMotion.capture({viewer:0,actor:0,action:{type:'ask'},deferDepartures:true});
         const draws=[{player:0,count:1,from:'hand',fromPlayer:1}];
-        PlayroomMotion.prepare(shot,draws);PlayroomMotion.prepare(shot,draws);
-        const held=document.querySelector('[data-motion-held-hand="1"]');
-        if(!held||held.querySelector('.mini-hand').children.length!==2||getComputedStyle(current).visibility!=='hidden')throw Error('Source shrank during answer');
+        shot.prepareTransfers(draws);
+        const captured=shot.handSurfaces.get(1).clone;
+        shot.prepareTransfers(draws);
+        if(shot.handSurfaces.get(1).clone!==captured)throw Error('Capture copied the same outgoing hand twice');
+        drawScene('draw');const mounted=document.querySelector('[data-player-index="1"] .mini-hand');
+        PlayroomMotion.prepare(shot,draws);
+        const held=document.querySelector('[data-motion-held-hand="1"]'),current=mounted.cloneNode(true);
+        current.style.removeProperty('visibility');mounted.replaceWith(current);
+        PlayroomMotion.stage(shot);
+        PlayroomMotion.prepare(shot,draws);
+        if(document.querySelector('[data-motion-held-hand="1"]')!==held||held?.firstElementChild!==captured)throw Error('Repeated preparation replaced the held hand or copied its captured artwork');
+        if(held.querySelector('.mini-hand').children.length!==2||getComputedStyle(current).visibility!=='hidden')throw Error('Source shrank during answer');
+        PlayroomMotion.prepare(shot,[]);
+        if(document.querySelector('[data-motion-pending],[data-motion-held-hand]')||getComputedStyle(current).visibility!=='visible')throw Error('Replacing preparation left the earlier hand hidden');
+        PlayroomMotion.prepare(shot,draws);
         const flight=PlayroomMotion.play(shot,{duration:160,draws});
         if(document.querySelector('[data-motion-held-hand]')||getComputedStyle(current).visibility!=='visible')throw Error('Source did not shrink before flight');
         await flight;
@@ -295,18 +505,19 @@ test('Clone captures resolve each source once per style epoch and preserve froze
     window.getComputedStyle=function(node,...args){const tracked=new Error().stack.includes('styledClone');if(tracked)reads.set(node,(reads.get(node)||0)+1);const style=nativeStyle.call(this,node,...args);return tracked?new Proxy(style,{get(target,key){if(key==='getPropertyValue')return property=>{if(!properties.has(node))properties.set(node,[]);properties.get(node).push(property);return target.getPropertyValue(property);};const value=Reflect.get(target,key,target);return typeof value==='function'?value.bind(target):value;}}):style;};
     Element.prototype.querySelectorAll=function(selector){if(selector==='*'&&new Error().stack.includes('styledClone'))walks.set(this,(walks.get(this)||0)+1);return nativeQuery.call(this,selector);};
     Node.prototype.cloneNode=function(deep){if(this===source&&deep)deepClones++;return nativeClone.call(this,deep);};
-    let snapshot;try{snapshot=PlayroomMotion.capture({action:{type:'draw'},deferDepartures:true});}finally{window.getComputedStyle=nativeStyle;Element.prototype.querySelectorAll=nativeQuery;Node.prototype.cloneNode=nativeClone;}
+    let snapshot;try{snapshot=PlayroomMotion.capture({action:{type:'draw'},deferDepartures:true});snapshot.prepareTransfers([{from:'stock',player:0,count:1}]);}finally{window.getComputedStyle=nativeStyle;Element.prototype.querySelectorAll=nativeQuery;Node.prototype.cloneNode=nativeClone;}
     const clone=snapshot.stockBack;return {clone,metrics:{svgBoxReads:(properties.get(source.querySelector('path'))||[]).filter(key=>['margin','padding','border','background','flex','grid-template-columns'].includes(key)),foreignFlexRead:(properties.get(source.querySelector('foreignObject div'))||[]).includes('flex'),pathFill:clone.querySelector('path').style.fill,rootReads:reads.get(source),descendantReads:[...source.querySelectorAll('*')].map(node=>reads.get(node)||0),cloneWalks:walks.get(clone),deepClones,sourceVisibility:source.style.visibility,childVisibility:clone.querySelector('.inherited').style.visibility,hiddenVisibility:clone.querySelector('.explicit-hidden').style.visibility,color:clone.style.color,fill:clone.querySelector('svg').style.fill,width:clone.style.width,height:clone.style.height,activeAttrs:clone.querySelectorAll('[data-action],[onclick],[id]').length+(clone.matches('[data-action],[onclick],[id]')?1:0)}};
    }
    const visible=capture(false),hidden=capture(true);document.querySelector('.scene').style.setProperty('--ink','rgb(131,41,61)');source.style.visibility='visible';const recolored=capture(false);
    let stockClones=0;Node.prototype.cloneNode=function(deep){if(this===source&&deep)stockClones++;return nativeClone.call(this,deep);};let lazy;
-   try{const shot=PlayroomMotion.capture({action:{type:'move'},deferDepartures:true});shot.prepareTransfers([]);lazy={before:stockClones,empty:shot.stockBack===null};shot.prepareTransfers([{from:'stock',player:0,count:1}]);lazy.after=stockClones;lazy.prepared=!!shot.stockBack;shot.prepareTransfers([{from:'stock',player:0,count:1}]);lazy.repeated=stockClones;const request=PlayroomMotion.capture({action:{type:'ask'},deferDepartures:true});request.prepareTransfers([],{back:true});lazy.request=!!request.stockBack;const legacy=PlayroomMotion.capture({action:{type:'move'}});lazy.legacy=!!legacy.stockBack;}finally{Node.prototype.cloneNode=nativeClone;}
+   try{const shot=PlayroomMotion.capture({action:{type:'draw'},deferDepartures:true});shot.prepareTransfers([]);lazy={before:stockClones,empty:shot.stockBack===null};shot.prepareTransfers([{from:'stock',player:0,count:1}]);lazy.after=stockClones;lazy.prepared=!!shot.stockBack;shot.prepareTransfers([{from:'stock',player:0,count:1}]);lazy.repeated=stockClones;const request=PlayroomMotion.capture({action:{type:'ask'},deferDepartures:true});request.prepareTransfers([],{back:true});lazy.request=!!request.stockBack;const legacy=PlayroomMotion.capture({action:{type:'move'}});lazy.legacy=!!legacy.stockBack;}finally{Node.prototype.cloneNode=nativeClone;}
    return {lazy,visible:visible.metrics,hidden:hidden.metrics,recolored:recolored.metrics,independent:visible.clone!==hidden.clone&&visible.clone.firstElementChild!==hidden.clone.firstElementChild,oldColor:visible.clone.style.color};
   });
-  assert.equal(result.lazy.before,0,'ordinary deferred moves do not clone the stock back');assert(result.lazy.empty);assert.equal(result.lazy.after,1);assert.equal(result.lazy.repeated,1);assert(result.lazy.prepared&&result.lazy.request&&result.lazy.legacy);
+  assert.equal(result.lazy.before,0,'a deferred draw with no transfer does not clone the stock back');assert(result.lazy.empty);assert.equal(result.lazy.after,1);assert.equal(result.lazy.repeated,1);assert(result.lazy.prepared&&result.lazy.request&&result.lazy.legacy);
   assert.equal(result.visible.rootReads,1,'visible source root style is resolved once, not visibility + freeze + metrics');
   assert.equal(result.hidden.rootReads,2,'hidden source is resolved again only after its temporary reveal');
   for(const sample of [result.visible,result.hidden,result.recolored]){assert.equal(sample.foreignFlexRead,true,'foreignObject HTML keeps full layout capture');assert.equal(sample.pathFill,sample.color);assert(sample.descendantReads.every(n=>n===1));assert.equal(sample.cloneWalks,1,'interaction stripping reuses the already enumerated cloned nodes');assert.equal(sample.deepClones,1,'the required independent frozen visual tree remains');assert.equal(sample.childVisibility,'visible');assert.equal(sample.hiddenVisibility,'hidden');assert.equal(sample.activeAttrs,0);assert.equal(sample.fill,sample.color);assert(parseFloat(sample.width)>0&&parseFloat(sample.height)>0);}
+  for(const sample of [result.visible,result.hidden,result.recolored])assert.deepEqual(sample.svgBoxReads,[],'SVG paths do not read CSS box styles');
   assert.equal(result.hidden.sourceVisibility,'hidden');assert.equal(result.visible.color,'rgb(29, 77, 113)');assert.equal(result.recolored.color,'rgb(131, 41, 61)');assert.equal(result.oldColor,result.visible.color);assert(result.independent);
   if(process.env.PLAYROOM_MOTION_EVIDENCE_DIR){fs.mkdirSync(process.env.PLAYROOM_MOTION_EVIDENCE_DIR,{recursive:true});fs.writeFileSync(path.join(process.env.PLAYROOM_MOTION_EVIDENCE_DIR,'clone-reads.json'),JSON.stringify({browserType:browser.browserType().name(),browserVersion:browser.version(),viewport:{width:390,height:740},result},null,2));}
  }finally{await browser.close();}

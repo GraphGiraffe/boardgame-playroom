@@ -9,25 +9,43 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
   'use strict';
   const records=new WeakMap();
   const {clone,freeze,canonical}=P;
+  const presentation=()=>globalThis.PlayroomTransition||(typeof require==='function'?require('../presentation/transition.js'):null);
   let sequence=0;
   const uid=()=>globalThis.crypto?.randomUUID?.()||`authority-${Date.now()}-${++sequence}`;
   const text={REACTION_IGNORED:globalThis.PlayroomMessages.text("ui.authority.5f23a122ff2d"),REACTION_WAIT:globalThis.PlayroomMessages.text("ui.authority.3872543a6282"),PAUSED:globalThis.PlayroomMessages.text("ui.authority.85620a4ad1ea"),BAD_COMMAND:globalThis.PlayroomMessages.text("ui.authority.acdb0b2cb886"),WRONG_SESSION:globalThis.PlayroomMessages.text("ui.authority.a0c9ab47df94"),WRONG_EPOCH:globalThis.PlayroomMessages.text("ui.authority.059dd3ee0afc"),READ_ONLY:globalThis.PlayroomMessages.text("ui.authority.c1945508163a"),STALE:globalThis.PlayroomMessages.text("ui.authority.3071d856a05b"),ILLEGAL:globalThis.PlayroomMessages.text("ui.authority.190d437d1355"),ID_CONFLICT:globalThis.PlayroomMessages.text("ui.authority.a19dbd4bae20"),CLOSED:globalThis.PlayroomMessages.text("ui.authority.b8adaa326e7c"),BUSY:globalThis.PlayroomMessages.text("ui.authority.08135f979c63"),RECEIPT_LIMIT:globalThis.PlayroomMessages.text("ui.authority.a7cd175031c4"),STORAGE_ERROR:globalThis.PlayroomMessages.text("ui.authority.852785addf93"),RECOVERY_REQUIRED:globalThis.PlayroomMessages.text("ui.authority.06ab5f697dcc")};
-  function transfers(before,after,events=after.events){
-    return events.filter(event=>event.id>(before.events.at(-1)?.id||0)&&event.transfer).map(event=>({...event.transfer,...(event.privateTo!=null?{privateTo:event.privateTo}:{})}));
-  }
-  // Decorated actions may have extra presentation fields. Index by each command
-  // shape so authorization preserves subset matching without an N x N scan.
+  // Keep the projection's order, but only its exact enabled choices. A
+  // targeted move must never implicitly enable a shorter move of the same type.
   function authorizedCommands(commands,actions){
-    const shapes=new Map();
-    return commands.filter(command=>{
-      const keys=Object.keys(command).sort(),shape=JSON.stringify(keys);
-      let allowed=shapes.get(shape);
-      if(!allowed){allowed=new Set(actions.filter(action=>keys.every(key=>Object.hasOwn(action,key))).map(action=>canonical(keys.map(key=>action[key]))));shapes.set(shape,allowed);}
-      return allowed.has(canonical(keys.map(key=>command[key])));
-    });
+    const resolve=P.choiceIndex(commands);
+    const allowed=new Set(actions.map(action=>resolve(action,true)));
+    return commands.filter(command=>allowed.has(command));
+  }
+  const stateFields=['version','game','packVersion','packStateVersion','preset','players','turn','status','winner','winners','move','firstPlayer','firstPlayerMode','result','openHands','events','scene','timeline'];
+  function retainProjection(r,state,view){
+    // Retain only fields the frame uses. The separate engine data view
+    // duplicates data this boundary already receives in the authorized model.
+    const fields={};
+    for(const key of stateFields)if(view[key]!==undefined)fields[key]=view[key];
+    const timeline=fields.timeline;
+    const History=globalThis.PlayroomHistory||(typeof require==='function'?require('./history.js'):null);
+    const shared=timeline&&timeline===state.timeline&&History?.owns(state);
+    if(shared)delete fields.timeline;
+    // The event presenter owns cached, immutable rows. Compose the event list
+    // independently so the protocol keeps those rows across revisions.
+    if(Array.isArray(fields.events))fields.events=P.composeArray(fields.events);
+    const projected=P.composeRecord({state:P.composeRecord(fields),model:view.modelProjection,tableActions:view.tableActions});
+    if(!shared)return projected;
+    // Keep one protocol-owned copy of the public timeline across audiences.
+    r.publicTimelines??=new Map();
+    let progress=r.publicTimelines.get(timeline);
+    if(!progress){
+      progress=P.immutable(timeline);r.publicTimelines.set(timeline,progress);
+      if(r.publicTimelines.size>2)r.publicTimelines.delete(r.publicTimelines.keys().next().value);
+    }
+    return P.composeRecord({...projected,state:P.composeRecord({...projected.state,timeline:progress})});
   }
   class SessionAuthority {
-    constructor(session,{sessionId=uid(),authorityEpoch=uid(),clock={setTimeout:(fn,ms)=>setTimeout(fn,ms),clearTimeout:id=>clearTimeout(id)},receiptLimit=20000,persistence=null,restoredReceipts=[],paused=false,controlRevision=0,playerControls=null,playerControlRevision=0,playerControlReceipts=[],realtime=null,clockTime=session.clockTime??session.current.clock??0,clockUpdatedAt=null}={}){
+    constructor(session,{sessionId=uid(),authorityEpoch=uid(),clock={setTimeout:(fn,ms)=>setTimeout(fn,ms),clearTimeout:id=>clearTimeout(id)},receiptLimit=20000,persistence=null,restoredReceipts=[],paused=false,controlRevision=0,playerControls=null,playerControlRevision=0,playerControlReceipts=[],realtime=null,clockTime=session.clockTime??session.current.clock??0,clockUpdatedAt=null,seriesResult=null}={}){
       if(!session?.current||!session.engine?.project)throw Error('Session required');
       if(typeof paused!=='boolean'||!Number.isSafeInteger(controlRevision)||controlRevision<0)throw Error('Invalid restored control');
       const controlsApi=globalThis.PlayroomPlayerControls||(typeof require==='function'?require('./player-controls.js'):null);
@@ -46,13 +64,27 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       }
       const realtimePort=typeof realtime==='function'?realtime({sessionId,authorityEpoch}):realtime;
       if(realtimePort&&(!realtimePort.scope||Object.keys(realtimePort.scope).some(k=>!['sessionId','authorityEpoch','roundId'].includes(k))||typeof realtimePort.scope.roundId!=='string'||!/^[a-zA-Z0-9_.:-]{1,128}$/.test(realtimePort.scope.roundId)||realtimePort.scope.sessionId!==sessionId||realtimePort.scope.authorityEpoch!==authorityEpoch||typeof realtimePort.request!=='function'||typeof realtimePort.preview!=='function'))throw Error('REALTIME_PORT_INVALID');
-      records.set(this,{gameClock:clockTime+(!paused&&clockUpdatedAt!==null?Math.max(0,Date.now()-clockUpdatedAt):0),gameClockAnchor:typeof clock.now==='function'?clock.now():(globalThis.performance?.now?.()??Date.now()),gameTimer:null,realtime:realtimePort,playerControls:clone(playerControls),playerControlRevision,playerReceipts,controlPending:false,session,sessionId,authorityEpoch,clock,receipts,bindings:new Set(),activityListeners:new Set(),timer:null,busy:false,idleWaiters:[],stopRequested:false,stopPromise:null,disposed:false,receiptLimit:persistence?Infinity:receiptLimit,persistence,paused:!!paused,controlRevision,reactions:new Map(),reactionRevision:0,botOptions:null,connected:new Map()});this._initializePreview();this._scheduleClock();
+      records.set(this,{gameClock:clockTime+(!paused&&clockUpdatedAt!==null?Math.max(0,Date.now()-clockUpdatedAt):0),gameClockAnchor:typeof clock.now==='function'?clock.now():(globalThis.performance?.now?.()??Date.now()),gameTimer:null,seriesResult,realtime:realtimePort,playerControls:clone(playerControls),playerControlRevision,playerReceipts,controlPending:false,session,sessionId,authorityEpoch,clock,receipts,bindings:new Set(),activityListeners:new Set(),timer:null,busy:false,idleWaiters:[],stopRequested:false,stopPromise:null,disposed:false,receiptLimit:persistence?Infinity:receiptLimit,persistence,paused:!!paused,controlRevision,reactions:new Map(),reactionRevision:0,botOptions:null,connected:new Map()});this._initializePreview();this._scheduleClock();
     }
     _initializePreview(){const r=records.get(this);if(r.realtime||!r.session.engine.get(r.session.game,r.session.packVersion).isolated)return;const API=globalThis.PlayroomRealtimeSession||(typeof require==='function'?require('../application/realtime-session.js'):null);r.realtime=new API.PreviewHub({scope:{sessionId:r.sessionId,authorityEpoch:r.authorityEpoch,roundId:'sdk-inputs'},authorize:(actor,data)=>{const Inputs=globalThis.PlayroomModelInputs||(typeof require==='function'?require('./model-inputs.js'):null),choices=r.session.engine.inputChoices(r.session.current,actor).filter(choice=>Object.values(choice.fields).some(field=>field.kind==='ink'));return Inputs.resolve(choices,data);},broadcast:envelope=>{for(const binding of r.bindings)if(!binding.closed)for(const listener of binding.realtimeListeners)try{listener(P.immutable(envelope));}catch{}},now:()=>this._now()});}
     get gameTime(){const r=records.get(this);return Math.max(r.session.clockTime??0,Math.floor(r.gameClock+(r.paused?0:Math.max(0,this._now()-r.gameClockAnchor))));}
+    get clockError(){return records.get(this).clockError;}
     _clockFailed(error){const r=records.get(this);if(!r.clockError){r.clockError=typeof error?.code==='string'&&/^[A-Z][A-Z0-9_]{1,79}$/.test(error.code)?error.code:'CLOCK_TRANSITION_FAILED';r.reactionRevision++;}this._publish();}
     _scheduleClock(){const r=records.get(this);if(r.gameTimer!==null)r.clock.clearTimeout(r.gameTimer);r.gameTimer=null;if(r.disposed||r.paused||r.stopRequested||r.clockError||r.session.current.status!=='playing'||r.session.current.clock===undefined)return;r.gameTimer=r.clock.setTimeout(()=>{r.gameTimer=null;if(r.busy||r.controlPending){this._scheduleClock();return;}try{const result=this.advanceClock();if(result?.then)result.catch(error=>this._clockFailed(error)).finally(()=>this._scheduleClock());else this._scheduleClock();}catch(error){this._clockFailed(error);}},100);}
-    advanceClock(now=this.gameTime){const r=records.get(this),s=r.session;if(r.disposed||r.paused||r.stopRequested||r.busy||s.current.clock===undefined)return s.current;if(!Number.isSafeInteger(now)||now<s.clockTime)throw Error('CLOCK_INVALID');const next=s.prepareClock(now);if(next===s.current)return next;const command={commandId:'clock-'+uid(),action:{type:'host-clock-v1',now}},before=s.current;const result=this._processor().execute({sessionId:r.sessionId,actor:-1,command,signature:canonical({kind:'host-clock-v1',now,revision:before.move}),before,prepare:()=>next});const finish=receipt=>{if(!receipt.ok){r.clockError=receipt.code;r.reactionRevision++;this._publish();throw Error(receipt.code);}r.clockError=null;this._scheduleClock();return s.current;};return result?.then?result.then(finish):finish(result);}
+    clockActions(){
+      const r=records.get(this),s=r.session;
+      if(r.disposed||r.paused||r.stopRequested||r.clockError)return [];
+      return s.engine.get(s.game,s.packVersion).clockActions?.(s.current)??[];
+    }
+    // Only the local room owner UI has this port. Connection bindings have player commands.
+    async runClockAction(control){
+      const r=records.get(this),revision=this.revision,now=this.gameTime;
+      if(r.busy||r.controlPending)throw Error('BUSY');
+      await this.advanceClock(now);
+      if(r.busy||r.controlPending||this.revision!==revision||!this.clockActions().some(action=>canonical(action)===canonical(control)))throw Error('CLOCK_ACTION_UNAVAILABLE');
+      return this.advanceClock(this.gameTime,control);
+    }
+    advanceClock(now=this.gameTime,control){const r=records.get(this),s=r.session;if(r.disposed||r.paused||r.stopRequested||r.busy||s.current.clock===undefined)return s.current;if(!Number.isSafeInteger(now)||now<s.clockTime)throw Error('CLOCK_INVALID');const next=s.prepareClock(now,control);if(next===s.current)return next;const command={commandId:'clock-'+uid(),action:s.preparedAction(next).command},before=s.current;const result=this._processor().execute({sessionId:r.sessionId,actor:-1,command,signature:canonical({action:command.action,revision:before.move}),before,prepare:()=>next});const finish=receipt=>{if(!receipt.ok){r.clockError=receipt.code;r.reactionRevision++;this._publish();throw Error(receipt.code);}r.clockError=null;this._scheduleClock();return s.current;};return result?.then?result.then(finish):finish(result);}
     _processor() {
       const r=records.get(this);
       return r.processor ||= new Processor({
@@ -75,7 +107,10 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       const r=records.get(this),s=r.session;this._syncReactionWindows();const targets=[];
       if(!r.disposed&&!r.paused&&s.current.status==='playing')for(let actor=0;actor<s.current.players.length;actor++){
         if(this._botControlled(actor)||r.playerControls[actor]?.away)continue;
-        if(s.engine.availableCommands(s.current,actor).some(action=>!this._currentReaction(actor,action)&&this._reactionDecision(actor,action)!=='REACTION_WAIT'))targets.push(actor);
+        if(s.engine.availableCommands(s.current,actor).some(action=>{
+          const control=this._reactionControl(actor,action);
+          return !this._currentReaction(actor,action,control)&&this._reactionDecision(actor,action,control)!=='REACTION_WAIT';
+        }))targets.push(actor);
       }
       return P.immutable({sessionId:r.sessionId,authorityEpoch:r.authorityEpoch,revision:this.revision,controlRevision:r.controlRevision,state:s.current.status==='finished'?'finished':r.paused?'paused':'playing',targets});
     }
@@ -97,11 +132,23 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       const r=records.get(this);if(r.disposed)throw Error('Invalid audience');
       const binding={...access,listeners:new Set(),wireListeners:new Set(),realtimeListeners:new Set(),closed:false},viewer=binding.viewer;r.bindings.add(binding);if(binding.role==='player')r.realtime?.connected?.(viewer);
       const requireOpen=()=>{if(binding.closed||r.disposed)throw Error(text.CLOSED);};
+      const readHistory=(index,options={})=>{
+        if(!Number.isSafeInteger(index)||index<0||index>=r.session.historyLength)throw Error('Invalid history index');
+        return this._snapshot(viewer,index,access,!!options.wire);
+      };
+      const readRange=(start,count,options={})=>P.historyRange(index=>readHistory(index,options),start,count,r.session.historyLength);
       return Object.freeze({
         snapshot:(options={})=>{requireOpen();return this._snapshot(viewer,undefined,binding,!!options.wire);},
         status:()=>{requireOpen();return this._status(binding);},
-        history:(index,options={})=>{requireOpen();if(!Number.isSafeInteger(index)||index<0||index>=r.session.historyLength)throw Error('Invalid history index');return this._snapshot(viewer,index,binding,!!options.wire);},
-        historyRange:(start,count,options={})=>{requireOpen();return P.historyRange(index=>this._snapshot(viewer,index,binding,!!options.wire),start,count,r.session.historyLength);},
+        history:(index,options)=>{requireOpen();return readHistory(index,options);},
+        historyRange:(start,count,options)=>{requireOpen();return readRange(start,count,options);},
+        completedHistory:()=>{
+          requireOpen();
+          if(r.session.current.status!=='finished')throw Error('HISTORY_NOT_FINISHED');
+          // A peer can ask for the previous match while the room is in its
+          // lobby. Retain its fixed audience and a reader without live commands.
+          return Object.freeze({history:readHistory,historyRange:readRange});
+        },
         subscribeRealtime:listener=>{requireOpen();if(typeof listener!=='function')throw Error('REALTIME_LISTENER_INVALID');binding.realtimeListeners.add(listener);return()=>binding.realtimeListeners.delete(listener);},
         realtimeScope:()=>{requireOpen();return r.realtime?P.immutable(r.realtime.scope):null;},
         realtime:value=>{requireOpen();if(!r.realtime)throw Error('REALTIME_UNAVAILABLE');if(!value||typeof value.method!=='string'||!/^[a-zA-Z0-9_.:-]{1,64}$/.test(value.method)||value.method==='finalize'||new TextEncoder().encode(JSON.stringify(value)).length>512*1024)throw Error('REALTIME_REQUEST_INVALID');const actor=binding.role==='player'?viewer:-1;if(!['checkpoint','stroke'].includes(value.method)&&(actor<0||r.paused||r.playerControls[actor]?.away||this._botControlled(actor)))throw Error('REALTIME_UNAVAILABLE');if(value.method==='preview'&&(r.busy||r.controlPending||r.stopRequested))throw Error('REALTIME_UNAVAILABLE');const run=()=>value.method==='preview'?r.realtime.preview(actor,value.envelope):r.realtime.request(actor,value.method,value.envelope);if(value.method==='preview'&&r.session.current.clock!==undefined){const advanced=this.advanceClock();return advanced?.then?advanced.then(run):run();}return run();},
@@ -118,7 +165,8 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     _snapshot(viewer,index,binding=null,wire=false){
       const r=records.get(this),s=r.session,live=index===undefined,state=live?s.current:s.states[index];
       const windows=live?this._syncReactionWindows():[];
-      const reactionWindows=windows.map(window=>({...window.descriptor,suspended:window.suspended,protected:window.readyAt===null||this._now()<window.readyAt+window.descriptor.humanMs}));
+      const reactionNow=r.transferStartedAt??this._now();
+      const reactionWindows=windows.map(window=>({...window.descriptor,suspended:window.suspended,protected:window.readyAt===null||reactionNow<window.readyAt+window.descriptor.humanMs}));
       const reactionWindow=reactionWindows.find(w=>w.owner===viewer)||reactionWindows[0]||null;
       const role=binding?.role||(viewer<0?'spectator':'player');
       const actor=role==='table'?(live&&binding.actors.includes(state.turn)&&!this._botControlled(state.turn)&&!r.playerControls[state.turn]?.away?state.turn:-1):viewer;
@@ -126,26 +174,56 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       // are evaluated on every read, even when no game revision has changed.
       r.projections??=new Map();if(!r.projections.has(state)){r.projections.set(state,new Map());while(r.projections.size>2)r.projections.delete(r.projections.keys().next().value);}
       const cache=r.projections.get(state),key=JSON.stringify([role,actor,viewer,wire,s.metadataRevision||0]);
-      let projected=cache.get(key);if(!projected){projected=P.immutable(role==='table'&&s.engine.projectTable?s.engine.projectTable(state,actor,{rawEvents:wire}):s.engine.project(state,viewer,{rawEvents:wire}));cache.set(key,projected);while(cache.size>128)cache.delete(cache.keys().next().value);}
+      let projected=cache.get(key);
+      if(!projected){
+        const options={rawEvents:wire,omitModelEvents:wire,dataView:'omit'};
+        const view=role==='table'&&s.engine.projectTable?s.engine.projectTable(state,actor,options):s.engine.project(state,viewer,options);
+        projected=retainProjection(r,state,view);cache.set(key,projected);
+        while(cache.size>128)cache.delete(cache.keys().next().value);
+      }
+      const model=projected.model,events=projected.state.events;
       const previous=live?s.previous:s.states[index-1];
-      const visible=!wire&&previous?transfers(previous,state,projected.events).map((draw,i)=>({id:`${state.move}:draw:${i}`,revision:state.move,...draw})):[];
-      const effects=visible.filter(draw=>draw.privateTo==null||(Array.isArray(draw.privateTo)?draw.privateTo.includes(viewer):draw.privateTo===viewer)).map(({privateTo,...draw})=>draw);
+      const afterEventId=previous?.events.at(-1)?.id||0;
+      const effects=!wire&&previous?presentation().transferEffects(events,viewer,state.move,afterEventId):[];
       // All outer fields are deliberate. options, seed and authority journal are absent.
-      const safe={};for(const key of ['version','game','packVersion','packStateVersion','preset','players','turn','status','winner','winners','move','firstPlayer','firstPlayerMode','result','openHands','events','scene','timeline'])if(projected[key]!==undefined)safe[key]=projected[key];
+      const safe={...projected.state};
       if(live&&safe.players&&s.playerMetadata)safe.players=safe.players.map((player,index)=>({...player,...s.playerMetadata(index)}));
       const inputAllowed=live&&!r.paused&&!r.clockError&&actor>=0&&!this._botControlled(actor)&&!r.playerControls[actor]?.away;
-      const directSDK=s.engine.get(s.game,s.packVersion).isolated&&projected.modelProjection?.choicesVersion!==1;
-      const actions=(!wire||directSDK)&&inputAllowed?(role==='table'?projected.tableActions||[]:s.engine.legalActions(state,actor)).filter(action=>this._reactionDecision(actor,action)!=='REACTION_WAIT').map(action=>{const control=s.engine.reactionControl?.(state,actor,action);return control?.kind==='challenge'&&this._reactionDecision(actor,action)==='REACTION_IGNORED'?{...action,disabled:true}:action;}):[];
-      if(projected.modelProjection){
-        const allowed=wire&&!directSDK?[]:authorizedCommands(projected.modelProjection.actions,actions);
-        if(directSDK){const authorized={...projected.modelProjection,actions:allowed,inputs:inputAllowed?projected.modelProjection.inputs||[]:[]};safe.sdkProjection=P.composeRecord(authorized);safe.scene=s.engine.get(s.game,s.packVersion).scene(authorized,safe.players);}
-        else if(wire){const {events,...model}=projected.modelProjection;safe.modelProjection=P.composeRecord(model);delete safe.scene;}
-        else if(inputAllowed&&allowed.length===projected.modelProjection.actions.length&&safe.players.every((player,index)=>player.name===state.players[index].name))safe.scene=projected.scene;
-        else safe.scene=s.engine.get(s.game,s.packVersion).scene({...projected.modelProjection,actions:allowed,inputs:inputAllowed?projected.modelProjection.inputs||[]:[]},safe.players);
+      const rules=s.engine.get(s.game,s.packVersion);
+      const directSDK=rules.isolated&&model?.choicesVersion!==1;
+      const actions=[],independentActions=[];
+      if((!wire||directSDK)&&inputAllowed){
+        const choices=role==='table'?projected.tableActions||[]:s.engine.legalActions(state,actor);
+        const controls=s.engine.reactionControls?.(state,actor,choices)??choices.map(choice=>this._reactionControl(actor,choice));
+        for(const [index,choice] of choices.entries()){
+          const control=controls[index],decision=this._reactionDecision(actor,choice,control,windows);
+          if(decision==='REACTION_WAIT')continue;
+          // The display list and its independent subset share one owned
+          // choice. Keep that identity when composing the snapshot below.
+          const action=P.immutable(control?.kind==='challenge'&&decision==='REACTION_IGNORED'?{...choice,disabled:true}:choice);
+          actions.push(action);
+          if(role==='player'&&this._currentReaction(actor,choice,control))independentActions.push(action);
+        }
       }
-      if(role==='table'){safe.tableActor=actor;safe.tableActions=actions;}
-      const frame=P.composeRecord({...r.clockError?{clockError:r.clockError}:{},now:live?this.gameTime:state.clock??0,protocolVersion:3,inputAllowed,role,...(role==='table'?{actor}:{}),kind:live?'snapshot':'history',...(live&&r.realtime?{realtimeScope:r.realtime.scope}:{}),sessionId:r.sessionId,authorityEpoch:r.authorityEpoch,revision:state.move,reactionRevision:r.reactionRevision,paused:r.paused,controlRevision:r.controlRevision,playerControls:r.playerControls,playerControlRevision:r.playerControlRevision,game:s.game,packVersion:s.packVersion,viewer,audience:viewer<0?'public':'player',state:P.composeRecord(safe),actions,independentActions:role==='player'?actions.filter(action=>this._currentReaction(actor,action)):[],events:projected.events,historyLength:s.historyLength,rosterRevision:s.metadataRevision||0,...(!wire?{cues:s.engine.soundCues(state,viewer,previous?.events.at(-1)?.id||0),effects}:{}),reactionWindow,reactionWindows});
-      return projected.modelProjection?P.withProjection(frame,safe.sdkProjection||projected.modelProjection):frame;
+      if(model){
+        const allowed=wire&&!directSDK?[]:authorizedCommands(model.actions,actions);
+        const sameScene=!wire&&(inputAllowed||!model.inputs?.length)&&allowed.length===model.actions.length&&
+          safe.players.every((player,index)=>player.name===state.players[index].name);
+        if(directSDK){
+          const authorized={...model,actions:allowed,inputs:inputAllowed?model.inputs||[]:[]};
+          safe.sdkProjection=P.composeRecord(authorized);
+          // The recipient builds the wire scene from these authorized controls.
+          if(wire)delete safe.scene;
+          else if(!sameScene||!safe.scene||!Array.isArray(model.inputs))safe.scene=(rules.restrictedScene||rules.scene)(safe.sdkProjection,safe.players);
+        }else if(wire){const {events:_,...facts}=model;safe.modelProjection=P.composeRecord(facts);delete safe.scene;}
+        else if(!sameScene)safe.scene=(rules.restrictedScene||rules.scene)({...model,actions:allowed,inputs:inputAllowed?model.inputs||[]:[]},safe.players);
+      }
+      const series=state.status==='finished'?r.seriesResult?.(state):null;
+      if(series)safe.matchSeriesResult=series;
+      const frameActions=P.composeArray(actions);
+      if(role==='table'){safe.tableActor=actor;safe.tableActions=frameActions;}
+      const frame=P.composeRecord({...r.clockError?{clockError:r.clockError}:{},now:live?this.gameTime:state.clock??0,protocolVersion:3,inputAllowed,role,...(role==='table'?{actor}:{}),kind:live?'snapshot':'history',...(live&&r.realtime?{realtimeScope:r.realtime.scope}:{}),sessionId:r.sessionId,authorityEpoch:r.authorityEpoch,revision:state.move,reactionRevision:r.reactionRevision,paused:r.paused,controlRevision:r.controlRevision,playerControls:r.playerControls,playerControlRevision:r.playerControlRevision,game:s.game,packVersion:s.packVersion,viewer,audience:viewer<0?'public':'player',state:P.composeRecord(safe),actions:frameActions,independentActions:P.composeArray(independentActions),events,historyLength:s.historyLength,rosterRevision:s.metadataRevision||0,...(!wire?{cues:presentation().soundCues(events,safe,viewer,afterEventId),effects}:{}),reactionWindow,reactionWindows});
+      return model?P.withProjection(frame,safe.sdkProjection||model):frame;
     }
     _now(){const clock=records.get(this).clock;return typeof clock.now==='function'?clock.now():(globalThis.performance?.now?.()??Date.now());}
     _clearWindow(window){
@@ -169,8 +247,12 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     _setReactionReady(window){
       const r=records.get(this);if(r.disposed||r.paused||r.stopRequested||window.suspended||r.reactions.get(window.descriptor.id)!==window)return;
       this._clearWindow(window);window.readyAt=this._now();r.reactionRevision++;
-      window.openTimer=r.clock.setTimeout(()=>{window.openTimer=null;if(r.disposed||r.paused||r.stopRequested||window.suspended||r.reactions.get(window.descriptor.id)!==window)return;r.reactionRevision++;this._publish();},window.descriptor.humanMs);
+      this._armReactionOpen(window,window.descriptor.humanMs);
       this._publish();if(r.botOptions)this.scheduleBot(r.botOptions);
+    }
+    _armReactionOpen(window,delay){
+      const r=records.get(this);
+      window.openTimer=r.clock.setTimeout(()=>{window.openTimer=null;if(r.disposed||r.paused||r.stopRequested||window.suspended||r.reactions.get(window.descriptor.id)!==window)return;r.reactionRevision++;this._publish();},delay);
     }
     _presentationReady(binding,message){
       const r=records.get(this);
@@ -197,20 +279,23 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       for(const window of windows){this._clearWindow(window);window.suspended=!this._botControlled(viewer)&&(!connected||r.playerControls[viewer]?.away);window.readyAt=null;window.createdAt=this._now();r.reactionRevision++;}
       this._publish();if((connected||this._botControlled(viewer))&&r.botOptions)this.scheduleBot(r.botOptions);
     }
-    _reactionDecision(actor,action){
-      const r=records.get(this),control=r.session.engine.reactionControl?.(r.session.current,actor,action);
+    _reactionControl(actor,action){
+      const s=records.get(this).session;
+      return s.engine.reactionControl?.(s.current,actor,action)??null;
+    }
+    _reactionDecision(actor,action,control=this._reactionControl(actor,action),currentWindows){
       if(control?.ignore)return 'REACTION_IGNORED';
       if(control?.episode!==undefined&&action.episode!==control.episode)return 'BAD_COMMAND';
       if(!control||!['challenge','advance'].includes(control.kind))return null;
-      const windows=this._syncReactionWindows().filter(w=>control.kind==='advance'||control.target===undefined||w.descriptor.owner===control.target);
-      for(const window of windows){
+      const now=records.get(this).transferStartedAt??this._now();
+      for(const window of currentWindows??this._syncReactionWindows()){
+        if(control.kind!=='advance'&&control.target!==undefined&&window.descriptor.owner!==control.target)continue;
         const delay=this._botControlled(actor)?window.descriptor.botMs:window.descriptor.humanMs;
-        if(window.readyAt===null||this._now()<window.readyAt+delay)return control.kind==='challenge'?'REACTION_IGNORED':'REACTION_WAIT';
+        if(window.readyAt===null||now<window.readyAt+delay)return control.kind==='challenge'?'REACTION_IGNORED':'REACTION_WAIT';
       }
       return null;
     }
-    _currentReaction(actor,action){
-      const r=records.get(this),control=r.session.engine.reactionControl?.(r.session.current,actor,action);
+    _currentReaction(actor,action,control=this._reactionControl(actor,action)){
       return !!control?.independent&&['answer','challenge'].includes(control.kind)&&Number.isSafeInteger(action.episode)&&action.episode===control.episode;
     }
     _commandActor(binding,command,internalBot=false){
@@ -250,9 +335,9 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       if(command.action.type==='session-pause')return this._pause(binding,command,signature,key,reject,{wire,receiptOnly});
       if(r.paused)return reject('PAUSED');
       if(r.receipts.size>=r.receiptLimit)return reject('RECEIPT_LIMIT');
-      const decision=this._reactionDecision(actor,command.action);
+      const control=this._reactionControl(actor,command.action),decision=this._reactionDecision(actor,command.action,control);
       const rejection=decision?{...reject(decision),...(decision==='REACTION_IGNORED'?{ignored:true}:{})}:
-        command.expectedRevision!==this.revision&&!this._currentReaction(actor,command.action)?reject('STALE'):null;
+        command.expectedRevision!==this.revision&&!this._currentReaction(actor,command.action,control)?reject('STALE'):null;
       const result=this._processor().execute({sessionId:r.sessionId,actor,command,signature,before:s.current,rejection,
         prepare:()=>s.prepare(actor,this._actionFor(binding,actor,command.action),s.current.clock===undefined?{}:{now:this.gameTime})});
       const reply=receipt=>freeze({...receipt,...(!r.disposed&&(!receiptOnly||!receipt.ok)?{snapshot:snapshot()}:{})});
@@ -310,13 +395,31 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     }
     async suspendForTransfer(){
       const r=records.get(this);if(r.disposed||r.stopRequested||r.controlPending)throw Error('HOST_TRANSFER_BUSY');
-      r.stopRequested=true;const bots=r.botOptions;this.cancelBot();
+      const startedAt=this._now(),bots=r.botOptions;
+      r.stopRequested=true;r.transferStartedAt=startedAt;this.cancelBot();
+      for(const window of r.reactions.values())this._clearWindow(window);
+      let released=false;
+      // An aborted transfer keeps the same authority and acknowledgement.
+      // Resume the remaining deadlines without requiring another UI message.
+      const thaw=()=>{
+        if(released||r.disposed)return;
+        released=true;r.stopRequested=false;r.transferStartedAt=null;
+        const now=this._now();
+        for(const window of r.reactions.values()){
+          const elapsed=now-Math.max(startedAt,window.createdAt);
+          window.createdAt+=elapsed;
+          if(window.readyAt===null)continue;
+          window.readyAt+=elapsed;
+          const remaining=window.readyAt+window.descriptor.humanMs-now;
+          if(remaining>0&&!r.paused&&!window.suspended)this._armReactionOpen(window,remaining);
+        }
+        this._syncReactionWindows();this._publish();
+        if(bots)this.scheduleBot(bots);
+      };
       if(r.busy||r.botBatch)await new Promise(resolve=>r.idleWaiters.push(resolve));
       if(r.disposed)throw Error('HOST_TRANSFER_CLOSED');
-      try{await r.processor?.flush();}catch(error){r.stopRequested=false;if(bots)this.scheduleBot(bots);throw error;}
-      for(const window of r.reactions.values()){this._clearWindow(window);window.readyAt=null;}
-      let released=false;
-      return ()=>{if(released||r.disposed)return;released=true;r.stopRequested=false;if(bots)this.scheduleBot(bots);};
+      try{await r.processor?.flush();}catch(error){thaw();throw error;}
+      return thaw;
     }
     stopForLobby(){
       const r=records.get(this);if(r.stopPromise)return r.stopPromise;
@@ -338,7 +441,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     async actBotAsync(actor,action){
       const r=records.get(this);
       if(r.disposed||r.busy||r.paused||!this._botControlled(actor))throw Error('Invalid bot actor');
-      const receipt=await this._dispatch({viewer:actor,closed:false},P.command(this._snapshot(actor),action,uid()),true);
+      const receipt=await this._dispatch({viewer:actor,closed:false},P.command(this._status({viewer:actor,role:'player'}),action,uid()),true,{receiptOnly:true});
       if(!receipt.ok)throw Error(receipt.message);return r.session.current;
     }
     _publish(){
@@ -351,7 +454,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
         for(const listener of [...listeners])try{listener(snapshot);}catch(_){/* UI failure cannot invalidate a commit. */}
       }
     }
-    cancelBot(){const r=records.get(this);r.botOptions=null;if(r.timer!==null){r.clock.clearTimeout(r.timer);r.timer=null;}}
+    cancelBot(){const r=records.get(this);r.botOptions=null;r.botSchedule=null;if(r.timer!==null){r.clock.clearTimeout(r.timer);r.timer=null;}}
     async _drainDecisionBots(window){
       const r=records.get(this),s=r.session;
       // Persist each accepted command, but publish readiness once per window.
@@ -374,10 +477,17 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       }
     }
     scheduleBot({delay=500,run,onError=()=>{}}={}){
-      this.cancelBot();const r=records.get(this),s=r.session,st=s.current;r.botOptions={delay,run,onError};if(r.botBatch||r.disposed||r.stopRequested||r.controlPending||r.paused||st.status!=='playing')return;
+      const r=records.get(this),s=r.session,st=s.current;
+      if(r.botBatch||r.disposed||r.stopRequested||r.controlPending||r.paused||st.status!=='playing'){this.cancelBot();return;}
+      // A repaint is not a new decision. Preserve the deadline while the
+      // revision, roster, control gates, pace and delivery callback still match.
+      const previous=r.botSchedule;
+      if(previous?.state===st&&previous.roster===s.metadataRevision&&previous.reaction===r.reactionRevision&&previous.controls===r.playerControlRevision&&r.botOptions?.delay===delay&&r.botOptions.run===run&&r.botOptions.onError===onError)return;
+      this.cancelBot();r.botOptions={delay,run,onError};
       const window=s.engine.decisionWindow?.(st),planning=window?.participants.find(i=>this._botControlled(i)&&!window.ready.includes(i));
-      const rosterState=s.playerMetadata?{...st,players:st.players.map((player,index)=>({...player,...s.playerMetadata(index)}))}:st;
+      const rosterState=s.metadataRevision&&s.playerMetadata?{...st,players:st.players.map((player,index)=>({...player,...s.playerMetadata(index)}))}:st;
       const windows=this._syncReactionWindows(),candidates=[];
+      r.botSchedule={state:st,roster:s.metadataRevision,reaction:r.reactionRevision,controls:r.playerControlRevision};
       const offer=(actor,action,reaction)=>{
         if(!action||!this._botControlled(actor))return;
         const control=s.engine.reactionControl?.(st,actor,action),protectedWindows=windows.filter(w=>control?.target===undefined||w.descriptor.owner===control.target);
@@ -400,8 +510,9 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       candidates.sort((a,b)=>a.wait-b.wait||Number(b.control?.kind==='answer')-Number(a.control?.kind==='answer'));
       const selected=candidates[0];if(!selected)return;
       const {actor,wait}=selected;
-      const revision=st.move;r.timer=r.clock.setTimeout(()=>{r.timer=null;if(r.disposed||r.paused||r.stopRequested||r.controlPending||!this._botControlled(actor)||s.current.move!==revision)return;
-        try{const current=selected.reaction?s.engine.botReaction?.(s.current,actor):s.engine.botAction(s.current,actor);if(!current)return;
+      const revision=st.move,scheduleRoster=s.metadataRevision;r.timer=r.clock.setTimeout(()=>{r.timer=null;r.botSchedule=null;if(r.disposed||r.paused||r.stopRequested||r.controlPending||!this._botControlled(actor)||s.current.move!==revision)return;
+        try{if(s.current!==st||s.metadataRevision!==scheduleRoster){this.scheduleBot({delay,run,onError});return;}
+          const current=selected.action;
           if(this._reactionDecision(actor,current)){this.scheduleBot({delay,run,onError});return;}
           if(r.persistence&&planning!==undefined&&actor===planning&&window.participants.length>1){
             return this._drainDecisionBots(window).then(()=>this.scheduleBot({delay,onError})).catch(onError);
@@ -434,13 +545,12 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       const r=records.get(this),s=r.session;
       if(r.persistence)throw Error('Durable bot actions require a committed async transition');
       if(r.disposed||r.busy||r.paused||!this._botControlled(actor))throw Error('Invalid bot actor');
-      const command=P.command(this._snapshot(actor),action,uid());
-      const receipt=this._dispatch({viewer:actor,closed:false},command,true);
+      const command=P.command(this._status({viewer:actor,role:'player'}),action,uid());
+      const receipt=this._dispatch({viewer:actor,closed:false},command,true,{receiptOnly:true});
       if(!receipt.ok)throw Error(receipt.message);
       return s.current;
     }
     dispose(){const r=records.get(this);if(r.gameTimer!==null)r.clock.clearTimeout(r.gameTimer);this.cancelBot();for(const window of r.reactions.values())this._clearWindow(window);r.reactions.clear();r.disposed=true;r.realtime?.close?.();r.activityListeners.clear();for(const b of r.bindings){b.closed=true;b.listeners.clear();b.wireListeners.clear();b.realtimeListeners.clear();}r.bindings.clear();}
   }
-  SessionAuthority.transfers=transfers;
   return SessionAuthority;
 });

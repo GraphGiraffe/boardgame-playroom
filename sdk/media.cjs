@@ -7,6 +7,27 @@ const extension=file=>typeof file==='string'?file.slice(file.lastIndexOf('.')).t
 const hex=bytes=>Array.from(bytes,n=>n.toString(16).padStart(2,'0')).join('');
 const ascii=(bytes,start,end)=>String.fromCharCode(...bytes.subarray(start,end));
 function utf8(bytes,file){try{return new TextDecoder('utf-8',{fatal:true}).decode(bytes);}catch{fail('SDK_ASSET_ENCODING',{file});}}
+// Convert the audited timeline once, while the host owns the asset bytes.
+// Every play gets its own clock and target, but shares these static frames.
+function prepareAnimation(value){
+ const duration=value.frames.at(-1).time;
+ let x=0,y=0;
+ const keyframes=value.frames.map(({time,values})=>{
+  const frame={offset:duration?time/duration:1};
+  if(values.x!==undefined||values.y!==undefined){
+   x=values.x??x;y=values.y??y;frame.translate=x+'px '+y+'px';
+  }
+  if(values.rotation!==undefined)frame.rotate=values.rotation+'deg';
+  if(values.scale!==undefined)frame.scale=String(values.scale);
+  if(values.opacity!==undefined)frame.opacity=values.opacity;
+  return Object.freeze(frame);
+ });
+ return Object.freeze({duration,keyframes:Object.freeze(keyframes)});
+}
+function preparedAnimations(files){
+ const entries=files.flatMap(({file,animation})=>animation?[[file,animation]]:[]);
+ return entries.length?Object.freeze(Object.fromEntries(entries)):undefined;
+}
 function readUint(bytes,offset,length,little,file){if(!Number.isInteger(offset)||offset<0||offset+length>bytes.length)fail('SDK_ASSET_SIGNATURE',{file});let value=0;for(let i=0;i<length;i++)value=value*256+bytes[offset+(little?length-i-1:i)];return value;}
 // FIPS 180-4 SHA-256, synchronous for Packs.prepare (WebCrypto is async).
 function sha256(bytes){
@@ -60,7 +81,7 @@ function svg(buffer,file){
 }
 function validateAsset(buffer,file){
  const ext=extension(file).toLowerCase(),maxBytes=fileLimit(file);if(buffer.length>maxBytes)fail('SDK_ASSET_SIZE_LIMIT',{file,bytes:buffer.length,maxBytes});
- let pixels=null,durationSeconds=null;const warnings=[];
+ let pixels=null,durationSeconds=null,animation;const warnings=[];
  if(ext==='.svg')svg(buffer,file);
  else if(ext==='.png'){
   if(buffer.length<24||hex(buffer.subarray(0,8))!=='89504e470d0a1a0a'||ascii(buffer,12,16)!=='IHDR')fail('SDK_ASSET_SIGNATURE',{file});
@@ -82,11 +103,11 @@ function validateAsset(buffer,file){
  else if(ext==='.wav')durationSeconds=wavDuration(buffer,file);
  else if(ext==='.ogg'){if(ascii(buffer,0,4)!=='OggS')fail('SDK_ASSET_SIGNATURE',{file});}
  else if(ext==='.mp3'){if(ascii(buffer,0,3)!=='ID3'&&!(buffer[0]===255&&(buffer[1]&224)===224))fail('SDK_ASSET_SIGNATURE',{file});}
- else {let value;try{value=JSON.parse(utf8(buffer,file));}catch{fail('SDK_ASSET_JSON',{file});}if(value?.contractVersion!==1||!Array.isArray(value.frames)||!value.frames.length||value.frames.length>1000||value.frames.some((frame,index)=>!frame||typeof frame!=='object'||Array.isArray(frame)||!Number.isFinite(frame.time)||frame.time<0||frame.time>BUDGET.animationMs||index>0&&frame.time<value.frames[index-1].time||!frame.values||typeof frame.values!=='object'||Array.isArray(frame.values)||Object.entries(frame.values).some(([key,n])=>!['x','y','rotation','scale','opacity'].includes(key)||!Number.isFinite(n)||Math.abs(n)>10000||key==='opacity'&&(n<0||n>1)||key==='scale'&&(n<0||n>20))))fail('SDK_ANIMATION_INVALID',{file});}
+ else {let value;try{value=JSON.parse(utf8(buffer,file));}catch{fail('SDK_ASSET_JSON',{file});}if(value?.contractVersion!==1||!Array.isArray(value.frames)||!value.frames.length||value.frames.length>1000||value.frames.some((frame,index)=>!frame||typeof frame!=='object'||Array.isArray(frame)||!Number.isFinite(frame.time)||frame.time<0||frame.time>BUDGET.animationMs||index>0&&frame.time<value.frames[index-1].time||!frame.values||typeof frame.values!=='object'||Array.isArray(frame.values)||Object.entries(frame.values).some(([key,n])=>!['x','y','rotation','scale','opacity'].includes(key)||!Number.isFinite(n)||Math.abs(n)>10000||key==='opacity'&&(n<0||n>1)||key==='scale'&&(n<0||n>20))))fail('SDK_ANIMATION_INVALID',{file});animation=prepareAnimation(value);}
  if(pixels!==null&&pixels>BUDGET.imagePixels)fail('SDK_IMAGE_LIMIT',{file});
  if(pixels!==null&&buffer.length>BUDGET.imageTargetBytes)warnings.push({code:'SDK_ASSET_TARGET_EXCEEDED',file,bytes:buffer.length,targetBytes:BUDGET.imageTargetBytes});
  if(MIME[ext].startsWith('audio/')&&durationSeconds===null)warnings.push({code:'SDK_AUDIO_DURATION_UNVERIFIED',file,hint:'Encoded size/signature checked; OGG/MP3 duration must be checked by browser metadata in the studio.'});
- return {mime:MIME[ext],bytes:buffer.length,maxBytes,decodedImageBytes:pixels===null?null:pixels*4,durationSeconds,warnings,sha256:sha256(buffer)};
+ return {mime:MIME[ext],bytes:buffer.length,maxBytes,decodedImageBytes:pixels===null?null:pixels*4,durationSeconds,warnings,sha256:sha256(buffer),...(animation?{animation}:{})};
 }
 
 function validateMedia(rows){
@@ -105,8 +126,8 @@ function validateMedia(rows){
   if(row.mime!==report.mime)fail('SDK_ASSET_MIME',{file});if(typeof row.sha256!=='string'||!/^[a-f0-9]{64}$/.test(row.sha256)||row.sha256!==report.sha256||row.bytes!==undefined&&row.bytes!==report.bytes)fail('SDK_ASSET_CHANGED',{file});
   decodedImageBytes+=report.decodedImageBytes||0;if(decodedImageBytes>BUDGET.decodedImageBytes)fail('SDK_DECODED_IMAGE_LIMIT',{decodedImageBytes,maxBytes:BUDGET.decodedImageBytes});files.push({file,...report});
  }
- return {files,bytes,decodedImageBytes};
+ return {files,bytes,decodedImageBytes,animations:preparedAnimations(files)};
 }
 return Object.freeze({MIME,fileLimit,validateAsset,validateMedia});
 }
-module.exports={createMediaValidator,sha256};
+module.exports={createMediaValidator,sha256,preparedAnimations};

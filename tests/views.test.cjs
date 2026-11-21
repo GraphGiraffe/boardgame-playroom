@@ -27,7 +27,7 @@ test('public frame ports prepare one authorized frame at a time and reuse its sc
  const registry=sandbox.TabletopUI.createRegistry(),owner={},calls=[],plan={id:'round:1',initial:0,final:3,groups:Array.from({length:3},(_,scene)=>({scene,duration:250,cues:[]}))};
  let live='latest';
  registry.register('uno',(_state,viewer,_actions,ui)=>({api:3,family:'cards',elements:{field:ui.publicFrames({key:'field',plan,renderFrame:index=>{calls.push([viewer,index]);return {markup:'<b>frame '+index+'</b>',label:'Frame '+index};},live:{markup:live,label:'Live'}})}}));
- const state=E.project(make('uno'),0),first=new Map(),html=registry.render(state,0,[],{renderOwner:owner,regionSink:first});
+ const state=E.project(make('uno'),0),first=new Map(),html=registry.render(state,0,[],{renderOwner:owner,regionSink:first,onRenderError:error=>{throw error;}});
  assert.deepEqual(calls,[],'rendering the shell must not build the whole round');assert.match(html,/data-public-frame-source/);assert.doesNotMatch(html,/data-public-frame-bank|frame 1|frame 2/);
  const source=first.publicFrames.get('scene:field');source.read(0);assert.equal(source.read(1).markup,'<b>frame 1</b>');source.read(1);assert.equal(calls.length,2);assert.throws(()=>source.read(4),/PUBLIC_FRAME_INVALID/);
  live='changed';const second=new Map();registry.render(state,0,[],{renderOwner:owner,regionSink:second});assert.equal(second.publicFrames.get('scene:field'),source);assert.equal(calls.length,2);assert.equal(source.read(3).markup,'changed');
@@ -113,10 +113,24 @@ test('scene reserves optional actions and validates generic motion route descrip
   assert.doesNotMatch(UI.composeScene(descriptor,{state,viewer:-1,surface:'table'}),/data-game-element="actions"/);
   assert.throws(()=>UI.composeScene({...descriptor,actionReserve:'yes'}));
   assert.throws(()=>UI.composeScene({...descriptor,motionSequence:{trigger:'roll'}}));
+  const {sceneRecipe}=require('../core/packs.js');
+  const award={type:'award',player:1};
+  const drawing={...state,game:'example',scene:{family:'drawing',controls:[{label:'Угадал игрок 2',command:award}]}};
+  const recipe=(actions,ui)=>sceneRecipe({state:drawing,viewer:0,actions,ui,helpers:UI.helpers});
+  const controls=recipe([award]).elements.actions;
+  assert.deepEqual(actionsIn(controls),[{...award,label:'Угадал игрок 2'}]);
+  assert.match(controls,/Угадал игрок 2/);
+  assert.deepEqual(actionsIn(recipe([],{replay:true}).elements.actions),[]);
   const art=UI.art({main:'<i>Face</i>',width:48,height:84,rotation:270});
   assert.match(art,/viewBox="0 0 84 48"/);assert.match(art,/translate\(0 48\) rotate\(-90\)/);
   assert.match(UI.participantIcon({isHost:true,local:true,replacement:{}}),/data-ui-icon="replacement"/);
   assert.doesNotMatch(UI.participantIcon({isHost:true,local:true}),/data-ui-icon="host"/);
+});
+
+test('explicitly hidden opponent hands reserve no physical hand lane',()=>{
+ const UI=require('../core/ui.js'),state={turn:0,players:[{name:'A'},{name:'B'}]},descriptor={api:3,family:'board',playerContent:[{handCount:4,showHand:false},{handCount:4,showHand:false}],elements:{field:'<div>Board</div>'}};
+ assert.match(UI.composeScene(descriptor,{state,viewer:0}),/data-opponent-hands="false"/);
+ descriptor.playerContent[1].showHand=true;assert.match(UI.composeScene(descriptor,{state,viewer:0}),/data-opponent-hands="true"/);
 });
 
 test('Hand overlap uses explicit instance selection, never markup classes',()=>{
@@ -251,7 +265,7 @@ test('manual UNO controls and accusations preserve public declaration context wi
  state.data.uno.declared[0]=true;assert.equal(scene(state,1).declared[0],true);assert(wire(state,1).actions.some(a=>a.type==='accuse-uno'&&a.target===0));
  const wild=state.data.drawPile.splice(state.data.drawPile.findIndex(c=>c.value==='wild'),1)[0];state.data.hands[0].push(wild);state.data.uno.declared[0]=false;assert.equal(scene(state,0).manualDeclaration,true);
  state.data.uno.mode='auto';assert.equal(scene(state,0).manualDeclaration,false);assert(!wire(state,0).actions.some(a=>['declare-uno','accuse-uno'].includes(a.type)));
- const setting=environment.bundles.find(b=>b.manifest.id==='uno').manifest.settings.find(s=>s.key==='unoMode');assert.equal(setting.default,'manual');assert.deepEqual(clone(setting.options.map(o=>o.value)),['manual','auto']);delete state.data.uno;assert.throws(()=>E.validateState(state));
+ const setting=require('../core/packs.js').runtimeManifest(require('../core/packs.js').localizedManifest(environment.bundles.find(b=>b.manifest.id==='uno'))).settings.find(s=>s.key==='unoMode');assert.equal(setting.default,'manual');assert.deepEqual(clone(setting.options.map(o=>o.value)),['manual','auto']);delete state.data.uno;assert.throws(()=>E.validateState(state));
 });
 
 test('trusted action markup escapes player controlled labels and exact JSON commands',()=>{
@@ -289,5 +303,5 @@ test('semantic position badges and Durak roles remain numeric and mutually exclu
 });
 
 test('actual isolated registrations match exact current distributable manifest versions',()=>{
- for(const game of loadedGames){const manifest=JSON.parse(fs.readFileSync(path.join(root,'packs',game,'manifest.json'),'utf8')),bundle=environment.bundles.find(b=>b.manifest.id===game);assert.equal(E.get(game).version,manifest.version);assert.equal(bundle.manifest.version,manifest.version);assert.equal(bundle.manifest.execution,'isolated-v1');assert(bundle.manifest.sdkFeatures.includes('isolated-execution-v1'));assert.equal(JSON.parse(bundle.files['sdk/source.json']).manifest.version,manifest.version);}
+ for(const game of loadedGames){const manifest=JSON.parse(fs.readFileSync(path.join(root,'packs',game,'manifest.json'),'utf8')),bundle=environment.bundles.find(b=>b.manifest.id===game);assert.equal(E.get(game).version,manifest.version);assert.equal(bundle.manifest.version,manifest.version);assert.equal(bundle.manifest.execution,'isolated-v1');assert(bundle.manifest.sdkFeatures.includes('isolated-execution-v1'));assert.equal(require('../core/packs.js').sdkSource(bundle).manifest.version,manifest.version);}
 });

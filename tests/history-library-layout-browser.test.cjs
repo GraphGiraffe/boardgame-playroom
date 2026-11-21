@@ -4,7 +4,7 @@ const {test}=require('node:test'),assert=require('node:assert/strict'),path=requ
 const {chromium,executablePath}=require('../scripts/codex/browser.cjs');
 const {serveBrowserFixture}=require('./browser-origin.cjs');
 const root=path.resolve(__dirname,'..'),Core=require('../core/engine.js'),Session=require('../core/session.js');
-for(const game of ['checkers','uno','domino','durak','snakes'])require(root+'/packs/'+game+'/rules.js');
+for(const game of ['checkers','domino','durak','snakes'])require(root+'/packs/'+game+'/rules.js');
 function saved(game,finished=false){const s=new Session(Core,game,{seed:17,mode:'solo',preset:'classic',players:[{name:'Иван'},{name:'Мика',bot:true}]});for(let i=0;i<8&&s.current.status==='playing';i++)s.act(s.current.turn,Core.botAction(s.current));if(finished){const apply=Core.applyAction;Core.applyAction=(...args)=>{const next=apply(...args);Core.finish(next,0,'Иван побеждает');return next;};try{s.act(s.current.turn,Core.botAction(s.current));}finally{Core.applyAction=apply;}}return s.export();}
 const active=TestUI.activeSurface;
 async function isolatedContext(browser,options){const context=await browser.newContext(options);await context.route(/https:\/\/[^/]+\.supabase\.co\//,r=>r.abort());return context;}
@@ -13,6 +13,7 @@ async function openClear(page){const management=page.locator('.saved021-manageme
 test('complete local and projected replay scenes fit beside reachable history controls',{timeout:90000},async t=>{
   const server=await serveBrowserFixture(root),browser=await chromium.launch({headless:true,executablePath:executablePath(),args:['--no-sandbox','--disable-background-networking']});
   try{for(const [width,height] of [[320,640],[390,740],[740,390],[1280,720]])for(const game of ['checkers','uno','domino','durak','snakes'])await t.test(game+' '+width+'×'+height,async()=>{
+    if(game==='uno')require('../packs/uno/rules.js');
     const context=await isolatedContext(browser,{viewport:{width,height},hasTouch:true}),page=await context.newPage(),fixture=saved(game),errors=[];page.setDefaultTimeout(5000);page.on('pageerror',e=>errors.push(e.message));
     try{
       await context.addInitScript(f=>localStorage.setItem('playroom.session.v1',JSON.stringify(f)),fixture);
@@ -82,6 +83,7 @@ test('saved records use labelled primary actions, preserve rare actions and read
 
 
 test('Hotseat library history chooses a player, preserves slider and leaves the active save untouched',{timeout:30000},async()=>{
+  require('../packs/uno/rules.js');
   const server=await serveBrowserFixture(root),browser=await chromium.launch({headless:true,executablePath:executablePath(),args:['--no-sandbox','--disable-background-networking']});
   const context=await isolatedContext(browser,{viewport:{width:390,height:740}}),page=await context.newPage();page.setDefaultTimeout(5000);
   const history=new Session(Core,'uno',{seed:19,mode:'pass',players:[{name:'Анна'},{name:'Борис'}]});history.act(history.current.turn,Core.botAction(history.current));
@@ -230,23 +232,29 @@ test('long Ludo history keeps a direct back button and returns to the unchanged 
  try{
   await context.addInitScript(raw=>{localStorage.setItem('playroom.player-profile.v1',JSON.stringify({version:1,id:'long-game-owner',name:'P0',createdAt:1,updatedAt:1}));localStorage.setItem('playroom.settings.v1',JSON.stringify({sound:false,tutorialsEnabled:false,animationSpeed:'instant',autoPass:false}));localStorage.setItem('playroom.session.v1',raw);},raw);
   if(process.env.PLAYROOM_TEST_ARTIFACT){const body=require('node:fs').readFileSync(process.env.PLAYROOM_TEST_ARTIFACT);await page.route('**/*',route=>route.abort());await page.route(server.url,route=>route.fulfill({status:200,contentType:'text/html',body}));}
-  await page.goto(server.url);await page.locator('[data-hub-page=sessions]:visible').click();await page.locator('.saved-game[data-saved-actions-toggle]').first().click();await page.locator('[data-resume-id]:visible').first().click();await page.locator('.ludo-board').waitFor();
+  await page.goto(server.url);await page.locator('[data-hub-page=sessions]:visible').click();await page.locator('.saved-game[data-saved-actions-toggle]').first().click();await page.locator('[data-resume-id]:visible').first().click();await page.locator('.sdk-cross-route').waitFor();
   const before=await page.evaluate(()=>JSON.stringify(PlayroomAppBridge.saveLibrary.current().session.current));
   await page.locator('[data-game-menu]').click();await page.locator('[data-command=history]:visible').click();await page.locator('#replay-range').waitFor();
   for(const viewport of [{width:390,height:844},{width:844,height:390}]){
    await page.setViewportSize(viewport);const back=page.locator('.game-frame-tools [data-command=history-close]');await back.waitFor({state:'visible'});assert.equal(await back.getAttribute('aria-label'),'Вернуться к партии');const box=await back.boundingBox();assert(box.x>=0&&box.y>=0&&box.x+box.width<=viewport.width+1,'history back stays inside viewport');
   }
   await page.locator('#replay-range').evaluate(el=>{el.value='100';el.dispatchEvent(new Event('input',{bubbles:true}));});
-  await page.locator('.game-frame-tools [data-command=history-close]').click();await page.locator('#replay-range').waitFor({state:'detached'});assert.equal(await page.evaluate(()=>JSON.stringify(PlayroomAppBridge.saveLibrary.current().session.current)),before,'replay/back never changes the live game or its save');assert.equal(await page.locator('.ludo-board').count(),1);
+  await page.locator('.game-frame-tools [data-command=history-close]').click();await page.locator('#replay-range').waitFor({state:'detached'});assert.equal(await page.evaluate(()=>JSON.stringify(PlayroomAppBridge.saveLibrary.current().session.current)),before,'replay/back never changes the live game or its save');assert.equal(await page.locator('.sdk-cross-route').count(),1);
   await page.locator('[data-game-menu]').click();await page.locator('[data-command=home]:visible').click();await page.locator('[data-hub-page=sessions]:visible').click();await page.locator('.saved-game[data-saved-actions-toggle]').first().click();await page.locator('[data-history-id]:visible').first().click();await page.locator('#replay-range').waitFor();
   const close=page.locator('.game-frame-tools [data-command=history-close]');assert.equal(await close.getAttribute('aria-label'),'Закрыть историю');await close.click();await page.locator('#replay-range').waitFor({state:'detached'});await page.locator('.saved-game').first().waitFor();assert.equal(await page.evaluate(()=>JSON.stringify(PlayroomAppBridge.saveLibrary.current().session.current)),before,'closing library history also preserves the active save');
   if(browser.browserType().name()==='chromium'){
    await page.emulateMedia({reducedMotion:'reduce'});const cdp=await context.newCDPSession(page),samples=[];
+   await page.evaluate(()=>{
+    window.historyRestores=0;
+    const restore=TabletopSession.restore;
+    TabletopSession.restore=function(...args){window.historyRestores++;return restore.apply(this,args);};
+   });
    for(let cycle=0;cycle<=20;cycle++){
     if(cycle){if(!await page.locator('[data-history-id]:visible').count())await page.locator('.saved-game[data-saved-actions-toggle]').first().click();await page.locator('[data-history-id]:visible').first().click();await page.locator('#replay-range').waitFor();await page.locator('.game-frame-tools [data-command=history-close]').click();await page.locator('.saved-game').first().waitFor();}
     await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));await cdp.send('HeapProfiler.collectGarbage');samples.push({cycle,...await cdp.send('Runtime.getHeapUsage'),...await cdp.send('Memory.getDOMCounters')});
    }
-   const fs=require('node:fs'),out=path.resolve(root,'../tmp_files/ux-021/long-game-1104');fs.mkdirSync(out,{recursive:true});fs.writeFileSync(path.join(out,'chromium-memory-cycles.json'),JSON.stringify({engine:browser.version(),moves:500,reducedMotion:true,forcedGC:true,samples},null,2));await cdp.detach();
+   assert.equal(await page.evaluate(()=>historyRestores),0,'reopening the same archive reuses its verified journal');
+   const fs=require('node:fs'),out=path.resolve(process.env.PLAYROOM_TEST_OUTPUT_DIR||path.join(root,'../tmp_files/ux-021/long-game-1104'));fs.mkdirSync(out,{recursive:true});fs.writeFileSync(path.join(out,'chromium-memory-cycles.json'),JSON.stringify({engine:browser.version(),moves:500,reducedMotion:true,forcedGC:true,samples},null,2));await cdp.detach();
   }
  }finally{await context.close();await browser.close();await server.close();}
 });

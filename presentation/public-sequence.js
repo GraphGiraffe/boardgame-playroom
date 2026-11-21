@@ -3,7 +3,14 @@
  const Scheduler=root.PlayroomPresentationScheduler||(typeof require==='function'?require('./scheduler.js'):null);
  const hosts=new WeakMap(),pending=new WeakMap(),executors=new WeakMap(),modes=new WeakMap(),sources=new WeakMap(),sourceSets=new WeakMap(),baselines=new WeakMap();
  function useSources(host,value){sources.set(host,value||new Map());}
- function setMode(host,mode){modes.set(host,mode);const state=hosts.get(host);if(mode==='pause'){state?.player.pause();if(state)state.playing=false;}else if(mode==='play')state?.player.resume();}
+ function setMode(host,mode){
+  modes.set(host,mode);
+  const state=hosts.get(host);if(!state||!['play','pause'].includes(mode))return;
+  if(mode==='pause'){state.player.pause();state.playing=false;}
+  else{state.player.resume();state.playing=state.index<state.last;}
+  const button=state.node?.querySelector('[data-sequence-play]');
+  if(button)button.textContent=state.playing?'Ⅱ':'▶';
+ }
  // A restored authoritative snapshot is a baseline, not a newly received action.
  function setBaseline(host,id){if(typeof id==='string'&&id)baselines.set(host,id);else baselines.delete(host);}
  function whenIdle(host){return hosts.get(host)?.player.whenIdle()||Promise.resolve();}
@@ -161,11 +168,17 @@
   const rate=()=>state.speed*(mode==='fast'?(root.PlayroomGameFlow?.effectTimes.normal.reveal||320)/(root.PlayroomGameFlow?.effectTimes.fast.reveal||180):mode==='slow'?(root.PlayroomGameFlow?.effectTimes.normal.reveal||320)/(root.PlayroomGameFlow?.effectTimes.slow.reveal||500):1);
   const start=()=>{
    state.player.setRate(rate());
-   state.player.play({...plan,id:scope+':'+id+':'+state.replay,groups:immediate?[]:plan.groups.map((group,index)=>({...group,cues:[...group.cues,{id:'frame-effects:'+index,kind:'frame-effects'}]}))},{
+   state.player.play({...plan,id:scope+':'+id+':'+state.replay,groups:immediate?[]:plan.groups.map((group,index)=>({
+    ...group,cues:[...group.cues,{id:'frame-effects:'+index,kind:'frame-effects',legacySound:!group.cues.some(cue=>cue.kind==='sound')}]
+   }))},{
     initial:index=>{state.index=immediate?last:index;draw();},
     group:(_index,group,context)=>{state.context=context;state.index=group.scene;state.playing=true;draw();},
-    effect:(cue,context)=>{if(cue.kind!=='frame-effects')return;const frame=frames[state.index],audio=root.PlayroomAppBridge?.audio;
-     const sound=frame.dataset.frameSound?(audio?.batch?audio.batch([frame.dataset.frameSound],frame.dataset.framePack,context):audio?.play?.([frame.dataset.frameSound],frame.dataset.framePack)):null;
+    effect:(cue,context)=>{
+     if(cue.kind!=='sound'&&cue.kind!=='frame-effects')return;
+     const frame=frames[state.index],audio=root.PlayroomAppBridge?.audio,pack=frame.dataset.framePack;
+     const ids=cue.kind==='sound'?cue.sounds:cue.legacySound&&frame.dataset.frameSound?[frame.dataset.frameSound]:null;
+     const sound=ids?(audio?.batch?audio.batch(ids,pack,context):audio?.play?.(ids,pack)):null;
+     if(cue.kind==='sound')return sound;
      return Promise.all([...(state.frameEffects||[]),sound]);
     },
     final:()=>{state.index=last;state.playing=false;draw();},

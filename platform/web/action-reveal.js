@@ -29,12 +29,21 @@
       const art=doc.createElement('div');art.className='action-reveal-art';
       if(value.kind==='dice'){
         art.classList.add('is-dice');
-        const H=root.TabletopUI.helpers;
-        for(const die of value.dice||[]){const item=doc.createElement('span');item.className='action-reveal-die'+(die.active===false?' is-unused':'');item.innerHTML=H.assetArt('die',{value:die.value},params=>H.components.dieArt(params.value));art.append(item);}
-        host.setAttribute('aria-label',[value.title,root.PlayroomMessages.text('ui.action-reveal.dice',{values:(value.dice||[]).map(die=>die.value).join(', ')})].filter(Boolean).join('. '));
+        const H=root.TabletopUI.helpers,dice=value.dice||[],labels=[];
+        // The pack presenter localizes labels even for standard pip faces.
+        const authored=dice.some(die=>die.face||die.label)?root.PlayroomViews?.reveal?.(pack,value):null;
+        for(const [index,die] of dice.entries()){
+          const item=doc.createElement('span');item.className='action-reveal-die'+(die.active===false?' is-unused':'');
+          item.innerHTML=Array.isArray(authored)?authored[index]:H.assetArt('die',{value:die.value},params=>H.components.dieArt(params.value));
+          labels.push(item.firstElementChild?.dataset.faceLabel||die.value);
+          art.append(item);
+        }
+        host.setAttribute('aria-label',[value.title,root.PlayroomMessages.text('ui.action-reveal.dice',{values:labels.join(', ')})].filter(Boolean).join('. '));
       }else if(value.kind==='card'||value.kind==='cards'){
         const markup=value.kind==='cards'?(value.cards||[]).map(card=>root.PlayroomViews?.reveal?.(pack,{kind:'card',card})).join(''):root.PlayroomViews?.reveal?.(pack,value);if(value.kind==='cards'){art.classList.add('is-card-set');art.style.setProperty('--reveal-card-count',value.cards.length);}if(!markup){this.value=null;return;}
         art.innerHTML=markup;art.classList.add('scene',pack+'-scene');
+        const labels=[value.title,...Array.from(art.children,card=>card.getAttribute('aria-label'))].filter(Boolean);
+        if(labels.length)host.setAttribute('aria-label',labels.join('. '));
         for(const node of art.querySelectorAll('*')){for(const attr of [...node.attributes])if(attr.name==='id'||attr.name.startsWith('data-')||attr.name.startsWith('on'))node.removeAttribute(attr.name);node.setAttribute('tabindex','-1');if('disabled'in node)node.disabled=true;}
       }else{this.value=null;return;}
       const content=doc.createElement('div');content.className='action-reveal-content';for(const child of [...host.children])content.append(child);content.append(art);host.append(content);doc.body.append(host);this.host=host;this.hideTarget();this.position();this.reposition=()=>this.position();root.addEventListener?.('resize',this.reposition);root.addEventListener?.('scroll',this.reposition,true);this.observer=root.ResizeObserver?new root.ResizeObserver(this.reposition):null;this.observer?.observe(mount);const field=mount.querySelector('.layout-field');if(field)this.observer?.observe(field);

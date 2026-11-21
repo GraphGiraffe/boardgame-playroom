@@ -5,6 +5,10 @@ const normalizeAvatar=value=>typeof value==='string'&&/^(crescent|triangle|squar
 const resumeTokenValid=token=>typeof token==='string'&&/^[0-9a-f]{64}$/.test(token);
 const ROOM_CODE=/^\d{4}$/,NAME_MAX=24,ROOM_NAME_MAX=48;
 const clone=value=>JSON.parse(JSON.stringify(value));
+const matchSeries=()=>globalThis.PlayroomMatchSeries||(typeof require==='function'?require('./match-series.js'):null);
+const seriesSeats=room=>room.seats.filter(seat=>seat.participantId).map(seat=>[seat.index,seat.participantId]);
+const seriesScope=room=>JSON.stringify([room.game.id,room.game.version,room.rules,seriesSeats(room)]);
+const continuingSeries=room=>room.seriesProgress&&room.seriesProgress.scope===seriesScope(room)?room.seriesProgress.snapshot:null;
 // Application-owned public wording for standard room/game policies. Packs only
 // declare supported values/defaults; they do not supply alternate descriptions.
 const STANDARD_RULE_VALUES=Object.freeze({firstPlayerMode:['rules','random','assigned'],seatOrder:['normal','random'],endMode:['winner','round','last']});
@@ -17,7 +21,7 @@ function standardRule(field){
 
 function sessionSetup(room){const seats=room.seats.filter(seat=>seat.participantId).sort((a,b)=>a.index-b.index);return {seatIndices:seats.map(seat=>seat.index),players:seats.map(seat=>{const person=room.participants.find(p=>p.id===seat.participantId);if(!person)throw Error('ROOM_PARTICIPANT_MISSING');return {name:person.nickname,bot:!!person.bot,...(person.botSettings?{botSettings:person.botSettings}:{}),...(person.avatar?{avatar:person.avatar}:{})};})};}
 
-const readyConfiguration=(room,id,{ignoreReset=false}={})=>{const me=room.participants.find(p=>p.id===id),reset=[...(room.events||[])].reverse().find(e=>e.requiresReady!==false&&['new-match-lobby','game-started','replacement-lobby','participant-kicked','roster-changed'].includes(e.type));return JSON.stringify([room.id,room.game,room.rulesRevision,room.botSettingsRevision,room.rules,room.firstPlayerMode,room.firstParticipantId,room.seatOrder,ignoreReset?null:reset?.id,me?.seatId,me?.replacement]);};
+const readyConfiguration=(room,id,{ignoreReset=false}={})=>{const me=room.participants.find(p=>p.id===id),reset=[...(room.events||[])].reverse().find(e=>e.requiresReady!==false&&['new-match-lobby','game-started','replacement-lobby','participant-kicked','roster-changed'].includes(e.type));return JSON.stringify([room.id,room.game,room.rulesRevision,room.botSettingsRevision,room.rules,room.seriesPolicy??null,room.firstPlayerMode,room.firstParticipantId,room.seatOrder,ignoreReset?null:reset?.id,me?.seatId,me?.replacement]);};
   const text=(value,max,label)=>{
     const result=String(value??'').trim().replace(/\s+/g,' ');
     if(!result)throw Error(globalThis.PlayroomMessages.text("ui.rooms.9a573d887812",{p0:String(label)}));
@@ -55,7 +59,7 @@ class RoomService{
       if(typeof validateRules!=='function')throw Error('ROOM_RULES_VALIDATOR_REQUIRED');
       this.idFactory=idFactory;this.clock=clock;this.random=random;this.tokenFactory=tokenFactory;this.validateStart=validateStart;this.validateRules=validateRules;
       this.rooms=new Map();this.listeners=new Map();this.resumeTokens=new Map();this.connectionLeases=new Map();
-      this.durableResumes=new Map();this.pendingResumes=new Set();this.resumeFallbacks=new Map();
+      this.durableResumes=new Map();this.pendingResumes=new Set();this.resumeFallbacks=new Map();this.lobbyCheckpoints=new Map();
     }
     _key(roomId,id){return roomId+':'+id;}
     _room(roomId){const room=this.rooms.get(roomId);if(!room)throw Error(globalThis.PlayroomMessages.text("ui.rooms.3be22888bc7f"));return room;}
@@ -64,7 +68,7 @@ class RoomService{
     _lobby(room){if(room.hostTransferPending)throw Error('HOST_TRANSFER_BUSY');if(room.phase!=='lobby')throw Error(globalThis.PlayroomMessages.text("ui.rooms.9f388d3161a5"));}
     _newMatch(room){if(room.recovery)throw Error(globalThis.PlayroomMessages.text("ui.rooms.cf5cddc45dcb"));}
     _editable(participant){if(participant.ready)throw Error(globalThis.PlayroomMessages.text("ui.rooms.9cd66d5ad9c8"));}
-    _touch(room){room.revision++;room.updatedAt=this.clock();}
+    _touch(room){room.revision++;room.updatedAt=this.clock();this.lobbyCheckpoints.get(room.id)?.(room.phase);}
     _emit(room,type,textValue,extra={}){
       room.eventSequence++;
       room.events.push({id:room.eventSequence,type,text:textValue,at:this.clock(),...extra});
@@ -114,7 +118,8 @@ class RoomService{
       const blocker=this._startBlocker(room);if(blocker)throw Error(blocker);
       if(room.recovery||room.startOrderResolved)return this.snapshot(roomId);
       const seats=room.seats.filter(s=>s.participantId),ids=seats.map(s=>s.participantId);
-      if(room.seatOrder==='random')for(let i=ids.length-1;i>0;i--){const j=Math.floor(this.random()*(i+1));[ids[i],ids[j]]=[ids[j],ids[i]];}
+      // Keep teams and physical seats stable while carrying a series score.
+      if(room.seatOrder==='random'&&!continuingSeries(room))for(let i=ids.length-1;i>0;i--){const j=Math.floor(this.random()*(i+1));[ids[i],ids[j]]=[ids[j],ids[i]];}
       seats.forEach((seat,i)=>{seat.participantId=ids[i];this._participant(room,ids[i]).seatId=seat.id;});
       room.startOrderResolved=true;for(const p of room.participants)delete p.rulesNotice;
       this._touch(room);return this.snapshot(roomId);
@@ -310,6 +315,7 @@ class RoomService{
       room.seats=seats;room.participants=room.participants.filter(p=>!dropped.has(p.id));
       delete room.startOrderResolved;room.firstPlayerMode=rules.firstPlayerMode||'rules';room.seatOrder=rules.seatOrder||'normal';
       if(room.firstParticipantId&&!room.participants.some(p=>p.id===room.firstParticipantId)){room.firstParticipantId=null;if(room.firstPlayerMode==='assigned')room.firstPlayerMode='rules';}
+      if(room.game.id!==game.id||room.game.version!==game.version){delete room.seriesPolicy;delete room.seriesProgress;}
       room.game=clone(game);room.rules=clone(rules);room.constraints=next;
       room.rulesRevision++;room.lobbyRevision++;
       for(const p of room.participants)p.ready=!!p.bot;
@@ -327,12 +333,28 @@ class RoomService{
       for(const seat of room.seats)if(!Number.isInteger(seat.playerIndex))seat.closed=true;
       room.lobbyRevision++;this._touch(room);this._emit(room,'replacement-lobby','Замена игроков');return this.snapshot(roomId);
     }
-    returnToLobby(roomId,hostId,{stopped=false}={}){
+    configureSeries(roomId,hostId,value){
+      const room=this._room(roomId);this._lobby(room);this._host(room,hostId);this._newMatch(room);
+      const next=value==null?null:matchSeries().policy(value);
+      if(JSON.stringify(next)===JSON.stringify(room.seriesPolicy??null))return this.snapshot(roomId);
+      room.seriesPolicy=next;delete room.seriesProgress;
+      this._resetRoomReady(room);this._emit(room,'series-configured','');
+      return this.snapshot(roomId);
+    }
+    seriesEntry(roomId,id,playerIds){
+      const room=this._room(roomId),rules=room.seriesPolicy,Series=matchSeries();
+      if(!rules)return null;
+      return Series.entry(continuingSeries(room)||Series.create(id,rules,playerIds),playerIds);
+    }
+    returnToLobby(roomId,hostId,{stopped=false,series=null}={}){
       const room=this._room(roomId);this._host(room,hostId);
       if(room.phase==='lobby')return this.snapshot(roomId);
       if(room.phase!=='playing')throw Error(globalThis.PlayroomMessages.text("ui.rooms.30263f1d2be6"));
       // The caller must verify that the authoritative match is FINISHED.
       // It remains in its immutable per-session IndexedDB journal.
+      if(!stopped&&series&&!matchSeries().table(series).complete){
+        room.seriesProgress={scope:seriesScope(room),snapshot:series};
+      }else delete room.seriesProgress;
       room.phase='lobby';room.countdownEndsAt=null;room.lobbyRevision++;
       delete room.recovery;delete room.startOrderResolved;for(const p of room.participants)delete p.rulesNotice;
       for(const seat of room.seats){delete seat.playerIndex;delete seat.previousParticipant;}
@@ -429,6 +451,16 @@ class RoomService{
       this._room(roomId);
       if(typeof callback!=='function')throw Error(globalThis.PlayroomMessages.text("ui.rooms.a90a2c3a4b03"));
       this.durableResumes.set(roomId,callback);
+      return ()=>{
+        if(this.durableResumes.get(roomId)===callback)this.durableResumes.delete(roomId);
+      };
+    }
+    observeLobbyCheckpoint(roomId,callback){
+      this._room(roomId);
+      this.lobbyCheckpoints.set(roomId,callback);
+      return ()=>{
+        if(this.lobbyCheckpoints.get(roomId)===callback)this.lobbyCheckpoints.delete(roomId);
+      };
     }
     freezeLobbyTransfer(roomId,hostId){const room=this._room(roomId);this._host(room,hostId);this._lobby(room);this._newMatch(room);room.hostTransferPending=true;return ()=>{delete room.hostTransferPending;};}
     exportRecovery(roomId,{lobby=false}={}){
@@ -440,6 +472,12 @@ class RoomService{
           ...(fallback?.expiresAt>this.clock()?{previousToken:fallback.token,previousExpiresAt:fallback.expiresAt}:{})};
       });
       if(tokens.some(p=>!resumeTokenValid(p.token)))throw Error(globalThis.PlayroomMessages.text("ui.rooms.ca4061dff059"));
+      // A playing session already journals the pre-match score. The lobby
+      // carries it only until the next session commits or the countdown fails.
+      if(room.phase==='playing'&&room.seriesProgress){
+        const {seriesProgress,...playingRoom}=room;
+        return {version:1,room:clone(playingRoom),tokens};
+      }
       return {version:1,room:clone(room),tokens};
     }
     restoreRecovery(value,{hostId,collect=false,sessionId=null,revision=0,lobby=false}={}){
@@ -457,6 +495,7 @@ class RoomService{
         ids.add(p.id);
         if(p.isHost!==(p.id===hostId))throw Error(globalThis.PlayroomMessages.text("ui.rooms.a3c0ff31f435"));
         p.connected=p.id===hostId||!!p.bot||!!p.local; // Network connections never survive page reload.
+        if(lobby)p.ready=!!p.bot;
       }
       for(const seat of room.seats){
         if(typeof seat.id!=='string'||seatIds.has(seat.id)||!Number.isInteger(seat.index))throw Error(globalThis.PlayroomMessages.text("ui.rooms.20ad05edbf46"));
@@ -631,7 +670,10 @@ class RoomService{
         close:()=>{if(participantId&&active()){service.connectionLeases.delete(service._key(roomId,participantId));try{service.setConnected(roomId,participantId,false);}catch(_){}}}
       };
     }
-    snapshot(roomId){return clone(this._room(roomId));}
+    snapshot(roomId){
+      const room=this._room(roomId);if(!room.seriesProgress)return clone(room);
+      const {seriesProgress,...publicRoom}=room;return clone(publicRoom);
+    }
   }
 class SwitchableConnection{
     constructor(connection=null){this.current=null;this.listeners=new Set();this.wireListeners=new Set();this.realtimeListeners=new Set();this.unsubscribeRealtime=null;this.unsubscribe=null;this.unsubscribeWire=null;if(connection)this.set(connection);}
@@ -649,14 +691,29 @@ class SwitchableConnection{
     snapshot(options){if(!this.current)throw Error('CLOSED');return this.current.snapshot(options);}
     status(){if(!this.current)throw Error('CLOSED');return this.current.status();}
     dispatch(value,options){if(!this.current)throw Error('CLOSED');return this.current.dispatch(value,options);}
-    history(value,options){if(!this.current)throw Error('CLOSED');return this.current.history(value,options);}
-    historyRange(start,count,options){if(!this.current)throw Error('CLOSED');return this.current.historyRange(start,count,options);}
-    subscribeRealtime(listener){this.realtimeListeners.add(listener);this._bind();return()=>{this.realtimeListeners.delete(listener);this._bind();};}
+    history(value,options){if(!this.current)throw Error('CLOSED');return (this.completedHistory||this.current).history(value,options);}
+    historyRange(start,count,options){if(!this.current)throw Error('CLOSED');return (this.completedHistory||this.current).historyRange(start,count,options);}
+    // The source authority can already be fenced when an RTC channel closes.
+    // Removing a listener must only release its upstream subscription.
+    _removeListener(listeners,listener,subscription){
+      if(listeners.delete(listener)&&!listeners.size){
+        this[subscription]?.();
+        this[subscription]=null;
+      }
+    }
+    subscribeRealtime(listener){
+      this.realtimeListeners.add(listener);this._bind();
+      return ()=>this._removeListener(this.realtimeListeners,listener,'unsubscribeRealtime');
+    }
     realtimeScope(){return this.current?.realtimeScope?.()||null;}
     realtime(value){if(!this.current?.realtime)throw Error('REALTIME_UNAVAILABLE');return this.current.realtime(value);}
     presentationReady(value){if(!this.current)throw Error('CLOSED');return this.current.presentationReady?.(value)||{ok:false};}
-    subscribe(listener,options={}){const listeners=options.wire?this.wireListeners:this.listeners;listeners.add(listener);this._bind();return()=>{listeners.delete(listener);this._bind();};}
-    close(){this.unsubscribeRealtime?.();this.realtimeListeners.clear();this.unsubscribe?.();this.unsubscribeWire?.();this.current?.close?.();this.listeners.clear();this.wireListeners.clear();this.current=null;}
+    subscribe(listener,options={}){
+      const listeners=options.wire?this.wireListeners:this.listeners;
+      listeners.add(listener);this._bind();
+      return ()=>this._removeListener(listeners,listener,options.wire?'unsubscribeWire':'unsubscribe');
+    }
+    close(){this.unsubscribeRealtime?.();this.realtimeListeners.clear();this.unsubscribe?.();this.unsubscribeWire?.();this.current?.close?.();this.listeners.clear();this.wireListeners.clear();this.current=null;this.completedHistory=null;}
   }
 
 return Object.freeze({sessionSetup,STANDARD_RULE_VALUES,standardRule,readyConfiguration,normalizeAvatar,ROOM_CODE,resumeTokenValid,normalizeName,normalizeRoomName,validateRuleSettings,RoomService,SwitchableConnection});

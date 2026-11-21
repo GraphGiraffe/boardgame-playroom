@@ -1,0 +1,14 @@
+{
+  "ru": {
+    "yes": "Да", "no": "Нет", "on": "Вкл", "off": "Выкл",
+    "auto": "Авто", "manual": "Вручную", "infinity": "∞", "none": "Нет",
+    "allowed": "Разрешён", "forbidden": "Запрещён", "classic": "Классический",
+    "game-options": "Параметры игры", "unit.s": "{value} с", "unit.min": "{value} мин", "unit.h": "{value} ч"
+  },
+  "en": {
+    "yes": "Yes", "no": "No", "on": "On", "off": "Off",
+    "auto": "Auto", "manual": "Manual", "infinity": "∞", "none": "None",
+    "allowed": "Allowed", "forbidden": "Forbidden", "classic": "Classic",
+    "game-options": "Game options", "unit.s": "{value} s", "unit.min": "{value} min", "unit.h": "{value} h"
+  }
+}

@@ -7,6 +7,10 @@
   'use strict';
   const ACTIVE = 'playroom.session.v1', PREFIX = 'playroom.paused.v1.';
   const fail=code=>{const error=Error(code);error.code=code;throw error;};
+  function seriesReference(match) {
+    return match?.series?.version===1&&typeof match.series.id==='string'&&match.series.id&&
+      Number.isSafeInteger(match.number)&&match.number>0?{id:match.series.id,number:match.number}:null;
+  }
   function header(raw){
     if(!raw.startsWith('{"librarySummary":'))return null;
     const boundary=raw.indexOf(',"format":');
@@ -30,19 +34,24 @@
     return 'unreadable-' + (hash >>> 0).toString(36);
   }
   class Library {
+    #historyEntry=null;
     constructor(storage, engine, Session, packs = null, {idFactory=()=>fail('LIBRARY_ID_SOURCE_REQUIRED')}={}) {
       this.storage=storage;this.engine=engine;this.Session=Session;this.packs=packs;this.idFactory=idFactory;
     }
     primary(participants,setup){const occupied=setup?.seats?.filter(seat=>seat.participantId).sort((a,b)=>a.index-b.index);return occupied?occupied.findIndex(seat=>seat.participantId===setup.ownerId):participants.findIndex(p=>!p.bot);}
-    summary(session){
-      const state=session.current,scene=this.engine.project?.(state,-1)?.scene,round=scene?.round||null;
-      return JSON.parse(JSON.stringify({formatVersion:1,game:session.game,packVersion:session.packVersion,
+    summary(session){return JSON.parse(JSON.stringify(this.#summaryFields(session)));}
+    #summaryFields(session){
+      const state=session.current,progress=this.engine.publicProgress?.(state)??this.engine.project?.(state,-1)?.scene;
+      const primary=this.primary(state.players,session.options.lobbyConfig);
+      const teams=new Map((progress?.players||[]).map(person=>[person.player,person.team]));
+      return {formatVersion:1,game:session.game,packVersion:session.packVersion,
         roomName:session.options.lobbyConfig?.name||session.options.portableRoomName||'',createdAt:session.createdAt,updatedAt:session.updatedAt,mode:session.options.mode,preset:session.options.presetLabel,
         players:state.players.map(player=>player.name),
         firstPlayer:state.firstPlayer,presetId:state.preset,
-        participants:state.players.map((player,index)=>({nickname:player.name,avatar:player.avatar||null,bot:!!player.bot,local:!player.bot,primary:index===this.primary(state.players,session.options.lobbyConfig),role:'player',playerIndex:index,team:scene?.players?.find(p=>p.player===index)?.team||null})),
-        round,turnNumber:state.timeline?.turn||null,turn:state.turn,turnName:state.players[state.turn]?.name||null,move:state.move,finished:state.status==='finished',
-        outcome:state.status==='finished'?{winner:state.winner,winners:state.winners||[]}:null}));
+        participants:state.players.map((player,index)=>({nickname:player.name,avatar:player.avatar||null,bot:!!player.bot,local:!player.bot,primary:index===primary,role:'player',playerIndex:index,team:teams.get(index)||null})),
+        round:progress?.round||null,turnNumber:state.timeline?.turn||null,turn:state.turn,turnName:state.players[state.turn]?.name||null,move:state.move,finished:state.status==='finished',
+        outcome:state.status==='finished'?{winner:state.winner,winners:state.winners||[]}:null,
+        matchSeries:seriesReference(session.options.matchSeries)};
     }
     version(saved) { return this.Session.packVersionOf?.(saved) || saved.packVersion || '0.1.0'; }
     references(game, version) {
@@ -93,14 +102,49 @@
       if(this.activeIdentity?.raw===raw)return this.activeIdentity.id;
       const id=identity(raw);this.activeIdentity={raw,id};return id;
     }
+    isLatestSeriesMatch(session,id) {
+      const match=seriesReference(session.options.matchSeries);
+      if(!match)return false;
+      let found=false;
+      for(const record of this.records()){
+        try {
+          const summary=header(record.raw)?.librarySummary;
+          if(summary&&summary.game!==session.game)continue;
+          // Older saves have the same series link in Session options. The
+          // index keeps newer scans independent of journal length and packs.
+          const other=summary&&Object.hasOwn(summary,'matchSeries')
+            ?summary.matchSeries:seriesReference(JSON.parse(record.raw).options?.matchSeries);
+          if(other?.id!==match.id)continue;
+          if(record.id===id){found=other.number===match.number;continue;}
+          if(other.number>=match.number)return false;
+        } catch (_) {}
+      }
+      return found;
+    }
     current() {
       const raw = this.storage().getItem(ACTIVE);
       return raw ? {id:identity(raw), session:this.restore(JSON.parse(raw))} : null;
     }
-    open(id) {
+    #record(id) {
       const record = this.records().find(record => record.id === id);
       if (!record) fail('LIBRARY_NOT_FOUND');
-      return this.restore(JSON.parse(record.raw));
+      return record;
+    }
+    open(id) {
+      return this.restore(JSON.parse(this.#record(id).raw));
+    }
+    openHistory(id) {
+      const {raw}=this.#record(id),cached=this.#historyEntry;
+      // History navigation owns one read-only bookmark. Playing a save uses
+      // open() so it cannot advance an instance retained for later viewing.
+      if(cached?.id===id&&cached.raw===raw){
+        const {game,packVersion}=cached.session;
+        this.packs?.activate(game,packVersion);
+        if(this.engine.get(game,packVersion)===cached.rules)return cached.session;
+      }
+      const session=this.restore(JSON.parse(raw));
+      this.#historyEntry={id,raw,session,rules:this.engine.get(session.game,session.packVersion)};
+      return session;
     }
     write(session, id) {
       return this.writeRaw(this.encode(session,id),id);
@@ -110,11 +154,16 @@
       const key = active && identity(active) === id ? ACTIVE : PREFIX + id;
       if (key !== ACTIVE && !store.getItem(key)) fail('LIBRARY_REMOVED');
       store.setItem(key, raw);
+      if(this.#historyEntry?.id===id&&this.#historyEntry.raw!==raw)this.#historyEntry=null;
     }
-    encode(session, id) {
+    encode(session, id,{roomName}={}) {
       const raw = session.serialize();
       if(typeof id!=='string'||!/^[a-zA-Z0-9_-]{1,100}$/.test(id))fail('LIBRARY_ID_INVALID');
-      return '{"librarySummary":'+JSON.stringify(this.summary(session))+',"libraryId":'+JSON.stringify(id)+','+raw.slice(1);
+      // Serialize the summary's borrowed fields directly; public callers of
+      // summary() still receive an independent object.
+      const summary=this.#summaryFields(session);
+      if(roomName!==undefined)summary.roomName=String(roomName).slice(0,100);
+      return '{"librarySummary":'+JSON.stringify(summary)+',"libraryId":'+JSON.stringify(id)+','+raw.slice(1);
     }
     activate(session, id) {
       return this.activateRaw(this.encode(session,id),id);
@@ -132,21 +181,25 @@
     }
     remove(id) {
       this.summaryCache?.delete(id);if(this.activeIdentity?.id===id)this.activeIdentity=null;
+      if(this.#historyEntry?.id===id)this.#historyEntry=null;
       const store = this.storage(), active = store.getItem(ACTIVE);
       store.removeItem(PREFIX + id);store.removeItem(this.statusKey('local:'+id));
       if (active && identity(active) === id) store.removeItem(ACTIVE);
     }
     statusKey(key){if(typeof key!=='string'||key.length>1024||!key.match(/^(local|network):.+/))fail('LIBRARY_STATUS_INVALID');return 'playroom.match-status.v1.'+encodeURIComponent(key);}
     archived(key){return this.storage().getItem(this.statusKey(key))==='archived';}
-    replaceAsync(session,id,roomName='',{guard=()=>{}}={}){const saved=JSON.parse(this.encode(session,id));saved.librarySummary.roomName=String(roomName).slice(0,100);const raw=JSON.stringify(saved);return this.persist(()=>{guard();if(!this.records().some(row=>row.id===id))fail('LIBRARY_REMOVED');this.writeRaw(raw,id);},{guard});}
+    replaceAsync(session,id,roomName='',{guard=()=>{}}={}){const raw=this.encode(session,id,{roomName});return this.persist(()=>{guard();if(!this.records().some(row=>row.id===id))fail('LIBRARY_REMOVED');this.writeRaw(raw,id);},{guard});}
     setArchivedAsync(key,value,{guard=()=>{}}={}){const statusKey=this.statusKey(key);if(typeof value!=='boolean')fail('LIBRARY_STATUS_INVALID');if(this.archived(key)===value){guard();return Promise.resolve();}return this.persist(()=>{guard();value?this.storage().setItem(statusKey,'archived'):this.storage().removeItem(statusKey);},{guard});}
     persist(operation,options) { return this.storage().transact?this.storage().transact(operation,options):Promise.resolve().then(operation); }
     writeAsync(session,id) { const raw=this.encode(session,id);return this.persist(()=>this.writeRaw(raw,id)); }
-    activateAsync(session,id) { const raw=this.encode(session,id);return this.persist(()=>this.activateRaw(raw,id)); }
+    activateAsync(session,id,{guard=()=>{}}={}) {
+      const raw=this.encode(session,id);
+      return this.persist(()=>{guard();return this.activateRaw(raw,id);},{guard});
+    }
     removeAsync(id,{guard=()=>{}}={}) { return this.persist(()=>{guard();return this.remove(id);},{guard}); }
     importAsync(session,id,roomName='',guard=()=>{}) {
-      const raw=this.encode(session,id),saved=JSON.parse(raw);saved.librarySummary.roomName=String(roomName).slice(0,100);
-      return this.persist(()=>{guard();const store=this.storage();if(this.records().some(row=>row.id===id))fail('LIBRARY_ID_CONFLICT');store.setItem(PREFIX+id,JSON.stringify(saved));});
+      const raw=this.encode(session,id,{roomName});
+      return this.persist(()=>{guard();const store=this.storage();if(this.records().some(row=>row.id===id))fail('LIBRARY_ID_CONFLICT');store.setItem(PREFIX+id,raw);});
     }
     newId() { return this.idFactory(); }
   }

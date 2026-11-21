@@ -19,7 +19,7 @@
 .account-identity .muted{font-size:var(--ui-type-label,.875rem)}
 .account-actions.menu-list{margin:0;gap:0}
 .account-modal .account-content[data-account-view^="account:"]{gap:0}
-.account-content .menu-list{width:100%;max-width:none}
+.account-content .menu-list,.account-modal>.modal-body>.menu-list{width:100%;max-width:none}
 .account-mode-tabs.shared-page-tabs>button{font-size:var(--ui-type-caption,.8125rem);padding:8px 4px}
 
 .account-field-hint{font-size:.75rem;font-weight:400;line-height:1.4;color:var(--muted)}
@@ -28,8 +28,8 @@
 .account-feedback-action{display:flex;flex-direction:column;gap:10px;min-width:0}
 
 [data-push-settings]{min-width:0}
-/* First entry presents both account choices as labelled, reachable actions. */
-.profile-entry-actions{display:grid;gap:10px;margin-top:14px}
-.profile-entry-actions>.btn{width:100%;margin:0}
+/* Keep first-entry actions available while the profile form scrolls. */
+.profile-entry-actions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+.profile-entry-actions>.btn{width:100%;min-width:0;margin:0}
 
 [data-push-retry]{grid-column:1/-1;justify-self:start}

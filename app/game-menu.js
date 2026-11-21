@@ -12,10 +12,10 @@
   close({feedback:false});const app=document.getElementById('app'),shell=app?.querySelector('.table-shell');if(!shell)return false;
   root.PlayroomGameChatPanel?.close({restoreFocus:false});
   const identity=shell.dataset.layoutIdentity,context=root.PlayroomNetworkLibrary?.inviteContext?.(),room=context?.room?{id:context.room.id,participantId:context.participantId,ownerId:context.room.ownerId,phase:context.room.phase}:null;
-  const localSessionId=shell.matches('.network-game')?null:root.PlayroomAppBridge.saveLibrary.currentId();
+  const localSessionId=shell.matches('.network-game')?null:root.PlayroomAppBridge?.saveLibrary?.currentId?.();
   const valid=()=>{
    const current=root.PlayroomNetworkLibrary?.inviteContext?.();
-   return document.querySelector('#app .table-shell')===shell&&shell.dataset.layoutIdentity===identity&&(!localSessionId||root.PlayroomAppBridge.saveLibrary.currentId()===localSessionId)&&(!room||current?.room?.id===room.id&&current.participantId===room.participantId&&current.room.ownerId===room.ownerId&&current.room.phase===room.phase);
+   return document.querySelector('#app .table-shell')===shell&&shell.dataset.layoutIdentity===identity&&(!localSessionId||root.PlayroomAppBridge?.saveLibrary?.currentId?.()===localSessionId)&&(!room||current?.room?.id===room.id&&current.participantId===room.participantId&&current.room.ownerId===room.ownerId&&current.room.phase===room.phase);
   };
   const inHistory=!!shell.querySelector('#replay-range');
   const lobby=actions.find(a=>a.name==='room'),history=actions.find(a=>a.attrs.includes('data-command="history"')),rules=actions.find(a=>a.attrs.includes('data-command="rules"')),settings=actions.find(a=>a.name==='settings'),stop=actions.find(a=>a.name==='stop'),pause=actions.find(a=>a.attrs.includes('data-command="pause"')),home=actions.find(a=>a.attrs.includes('data-command="home"')),chat=actions.find(a=>a.name==='chat');

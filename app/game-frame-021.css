@@ -15,10 +15,11 @@
 .game-frame-turn-extra,.game-frame-event{position:static;display:inline;white-space:nowrap;}
 .game-frame-turn-extra:not(:empty)+.game-frame-event:before{content:" · ";}
 #app .table-shell>.game-frame-header{box-sizing:border-box;height:60px;min-height:60px;gap:8px;align-items:center;flex-wrap:nowrap;}
-#app .table-shell>.game-frame-header>.game-frame-heading{display:flex;flex-direction:column;align-items:stretch;justify-content:center;gap:2px;min-width:0;height:60px;min-height:60px;max-height:none;margin:0;padding:6px;box-sizing:border-box;}
-#app .game-frame-identity{display:flex;align-items:center;gap:6px;min-width:0;height:24px;flex:none;}
+#app .table-shell>.game-frame-header>.game-frame-heading{display:flex;flex-direction:column;align-items:stretch;justify-content:center;gap:2px;min-width:0;height:60px;min-height:60px;max-height:none;margin:0;padding:4px 6px;box-sizing:border-box;}
+/* Two title lines fit above the status within the same reserved system panel. */
+#app .game-frame-identity{display:flex;align-items:center;gap:6px;min-width:0;min-height:max(24px,1rem);flex:none;}
 #app .game-frame-identity .game-frame-cover{width:24px;height:24px;min-width:24px;}
-#app .game-frame-identity .game-frame-title h1{font-size:.875rem;line-height:1rem;-webkit-line-clamp:1;}
+#app .game-frame-identity .game-frame-title h1{font-size:.875rem;line-height:1rem;}
 #app .table-shell .game-frame-heading>.game-frame-status{position:static;inset:auto;width:100%;height:16px;min-height:16px;margin:0;padding:0;background:transparent;display:flex;align-items:center;gap:4px;overflow:hidden;}
 #app .game-frame-status:has([data-scene-status])>.game-frame-details{display:none;}
 #app .game-frame-status [data-scene-status]{display:flex;flex-direction:row;align-items:center;gap:8px;margin:0;padding:0;height:16px;white-space:nowrap;font-size:10px;}
@@ -63,7 +64,7 @@
 #app .app-game-layout[data-seat-anchors="true"][data-has-hand="false"] :is(.seat-south-west,.seat-south-east){top:calc(50% + var(--anchor-corner-offset,calc(var(--anchor-field-size)*.1)));bottom:auto;}
 #app .app-game-layout[data-seat-anchors="true"][data-has-hand="false"] [data-portrait-copy="true"]{display:flex!important;}
 #app .app-game-layout[data-seat-anchors="true"][data-has-hand="false"]>.layout-self>.player-panel{display:none!important;}
-#app .app-game-layout[data-seat-anchors="true"][data-has-hand="false"]>.layout-self{top:calc(50% + var(--anchor-corner-offset,calc(var(--anchor-field-size)*.1)) + var(--anchor-south-seat-height,46px) + 4px);bottom:6px;height:auto!important;padding:0!important;align-self:stretch!important;justify-content:center;align-items:center;}
+#app .app-game-layout[data-seat-anchors="true"][data-has-hand="false"]>.layout-self{top:calc(50% + var(--anchor-corner-offset,calc(var(--anchor-field-size)*.1)) + var(--anchor-south-seat-height,46px) + 4px);bottom:6px;height:auto!important;padding:0!important;align-self:stretch!important;justify-content:safe center;align-items:center;overflow-y:auto;}
 #app .app-game-layout[data-seat-anchors="true"][data-has-hand="false"]>.layout-self>.layout-actions{flex:none;width:100%;margin:0;}
 #app .table-shell:has([data-field-columns="3"])>.scene{height:100%;flex:1;}
 #app .app-game-layout[data-opponents-align="end"]>.layout-participants{align-self:end;grid-row:2/-1;}
@@ -121,6 +122,19 @@
  #app .app-game-layout[data-player-indicators="below-avatar"] .player-panel .player-indicators{display:flex;flex-direction:column;gap:2px;width:100%}
  #app .app-game-layout[data-player-indicators="below-avatar"] .player-panel .player-indicator{min-height:22px;padding:2px 6px}
  #app .app-game-layout[data-player-indicators="below-avatar"] .player-panel .player-indicator>svg{height:16px;width:auto}
+ #app .app-game-layout[data-landscape-roster-columns][data-player-indicators="below-avatar"]>.layout-self{
+  container:player-zone / size;
+ }
+ /* Fit the board controls below the header when the side zone loses height to replay. */
+ @container player-zone (max-height:208px){
+  #app .app-game-layout[data-player-indicators="below-avatar"]>.layout-self>.player-panel .player-info{
+   min-height:0!important;
+  }
+  #app .app-game-layout[data-player-indicators="below-avatar"]>.layout-self>.player-panel .player-indicators{
+   display:grid;
+   grid-template-columns:repeat(2,minmax(0,1fr));
+  }
+ }
 }
 #app .app-game-layout .player-panel .player-info{width:100%;min-width:0;box-sizing:border-box}
 
@@ -169,7 +183,6 @@ body.reduced-motion #app .player-panel[data-turn-preview]{animation:none}
 
 /* A compact side-by-side hand must expose at least one complete card width. */
 @media(orientation:landscape){#app .app-game-layout .player-panel.opponent-hand .mini-hand{min-width:calc(var(--opponent-card-width,40px) + 8px)}}
-#app .game-frame-identity{min-height:max(24px,1rem)}
 
 /* A scroll viewport fits its reserved field; physical content may scroll inside. */
 #app .app-game-layout .layout-field [data-scene-scroll]{min-inline-size:0;max-inline-size:100%;}
@@ -180,3 +193,21 @@ body.reduced-motion #app .player-panel[data-turn-preview]{animation:none}
 
 #app .app-game-layout .player-data:has(>.player-status){flex-wrap:wrap}
 #app .app-game-layout .player-status{display:inline-flex;align-items:center;justify-content:flex-end;min-width:var(--player-status-min-width,24px);flex:1 1 0;margin-inline-start:auto;container:player-status / inline-size}
+
+/* System panels use the final roster bounds, including authored corner seats. */
+@media(orientation:landscape) and (min-width:600px){
+ #app .table-shell>.game-frame-header>.game-frame-heading{width:var(--system-heading-width,calc(var(--opponent-zone-width,var(--side-width,180px)) + 6px));margin-left:var(--system-heading-inset,0px)}
+ #app .table-shell>.game-frame-header>.game-frame-tools{width:var(--system-tools-width,calc(var(--self-zone-width,var(--side-width,180px)) + 6px));margin-right:var(--system-tools-inset,0px)}
+}
+/* One path owns both the clipped backdrop and its visible boundary. */
+.game-zone-outline{position:absolute;inset:0;display:none;width:100%;height:100%;pointer-events:none;z-index:0;overflow:visible}
+.game-zone-outline>path{fill:none;stroke:var(--color-border-subtle,var(--line));stroke-width:1;vector-effect:non-scaling-stroke}
+
+/* A compact opponent keeps identity/counters left and its existing hand right. */
+@media(orientation:landscape) and (min-width:600px){
+ #app .app-game-layout[data-inline-opponent-hands="true"] .layout-participants .player-panel.opponent-hand{display:grid!important;grid-template-columns:minmax(0,1fr) minmax(40px,40%);align-items:center;align-content:center;gap:4px;min-height:0;height:auto;align-self:start}
+ #app .app-game-layout[data-inline-opponent-hands="true"] .layout-participants .opponent-hand>.player-info{grid-column:1;grid-row:1;min-width:0;width:100%;box-sizing:border-box}
+ #app .app-game-layout[data-inline-opponent-hands="true"] .layout-participants .opponent-hand>.player-hand{grid-column:2;grid-row:1;min-width:0;width:auto;max-width:100%;margin:0;overflow:hidden}
+ #app .app-game-layout[data-inline-opponent-hands="true"] .layout-participants .opponent-hand .mini-hand{width:100%;min-width:40px;max-width:100%;margin:0!important}
+ #app .app-game-layout[data-inline-opponent-hands="true"] .layout-participants .opponent-hand .mini-hand:not(.is-open){justify-content:flex-end!important}
+}

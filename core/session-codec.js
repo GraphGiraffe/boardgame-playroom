@@ -99,6 +99,11 @@
     return (a>>>0).toString(16).padStart(8,'0')+(b>>>0).toString(16).padStart(8,'0');
   }
   // Strict, bounded command envelopes. Rule legality belongs to Session/engine replay.
+  function validClockCommand(value){
+    return isRecord(value)&&value.type==='host-clock-v1'&&Number.isSafeInteger(value.now)&&value.now>=0&&
+      Object.keys(value).every(key=>['type','now','control'].includes(key))&&
+      (value.control===undefined||isRecord(value.control)&&typeof value.control.type==='string');
+  }
   function actionLog(saved){
     const fail=()=>{throw Error('Invalid action history');};
     if(!['actions-v1','actions-v2','actions-v3'].includes(saved.encoding)||typeof saved.game!=='string'||typeof saved.packVersion!=='string'||!saved.packVersion||
@@ -110,7 +115,7 @@
     function visit(value,depth=0){if(++count>2000000||depth>64)fail();if(value&&typeof value==='object'){for(const item of Object.values(value))visit(item,depth+1);}else if(value!==null&&!['string','boolean','number'].includes(typeof value)||typeof value==='number'&&!Number.isFinite(value))fail();}
     visit(saved.options);
     for(const entry of saved.actions){
-      if(!isRecord(entry)||Object.keys(entry).some(key=>!['actor','command','players','now'].includes(key))||!Number.isInteger(entry.actor)||(entry.actor<0&&!(saved.encoding==='actions-v3'&&entry.actor===-1&&entry.command?.type==='host-clock-v1'&&Number.isSafeInteger(entry.command.now)&&entry.command.now>=0))||entry.actor>=32||!isRecord(entry.command))fail();
+      if(!isRecord(entry)||Object.keys(entry).some(key=>!['actor','command','players','now'].includes(key))||!Number.isInteger(entry.actor)||(entry.actor<0&&!(saved.encoding==='actions-v3'&&entry.actor===-1&&validClockCommand(entry.command)))||entry.actor>=32||!isRecord(entry.command))fail();
       if(entry.now!==undefined&&(!Number.isSafeInteger(entry.now)||entry.now<0||saved.encoding!=='actions-v3'))fail();
       if(entry.players!==undefined&&(!Array.isArray(entry.players)||entry.players.length>32||new Set(entry.players.map(p=>p?.index)).size!==entry.players.length))fail();
       visit(entry);
@@ -118,5 +123,5 @@
     if(JSON.stringify(saved).length>32*1024*1024)fail();
     return saved;
   }
-  return Object.freeze({create:createCodec,encodeSnapshot,decode:decodeCompact,actionLog,fingerprint});
+  return Object.freeze({create:createCodec,encodeSnapshot,decode:decodeCompact,actionLog,validClockCommand,fingerprint});
 });

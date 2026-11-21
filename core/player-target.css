@@ -1,0 +1,23 @@
+/* Canonical player action/card picker styles shared by app and SDK viewer. */
+.player-target-menu{position:fixed;z-index:80;display:flex;flex-direction:column;gap:5px;padding:6px;border:1px solid var(--color-border-subtle,#a9bd94);background:var(--paper);border-radius:12px;box-shadow:0 6px 18px #20352d33;max-width:calc(100vw - 16px)}
+.player-panel>.player-target-menu{max-height:calc(100% - 12px);overflow:auto;max-width:calc(100% - 12px)}
+.player-target-menu{z-index:45}
+.player-target-menu.is-card-choice{position:fixed;z-index:90;flex-direction:row;overflow-x:auto;overflow-y:hidden;max-width:calc(100vw - 16px);padding:12px;gap:8px;box-sizing:border-box}
+.player-target-menu.is-card-choice>button{flex:none;min-width:0;width:55px;height:77px;aspect-ratio:5/7;padding:0;border:2px solid var(--color-border-subtle,#638658);border-radius:9px;background:var(--color-surface-raised,#e7ead7)}
+.player-target-menu.is-card-choice .piece-back{display:block;width:100%;height:100%;min-width:0;min-height:0;border:0;aspect-ratio:5/7}
+.player-target-menu.is-card-choice.in-field{justify-content:center;position:absolute;inset:0;max-width:none;max-height:none;display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,100px),140px));grid-auto-rows:min-content;align-content:start;gap:8px;overflow-x:hidden;overflow-y:auto;box-shadow:none;z-index:10}
+.player-target-menu.is-card-choice.in-field>button{width:100%;height:auto;aspect-ratio:5/7}
+.card-choice-heading{grid-column:1/-1;display:flex;align-items:center;gap:8px;position:sticky;top:-12px;background:var(--paper);z-index:1}
+.card-choice-heading .avatar{width:28px;height:28px;font-size:16px;flex:none}
+.card-choice-heading .icon-btn{margin-left:auto}
+.player-target-menu:not(.is-card-choice){max-height:none;overflow:visible;width:max-content}
+.player-target-menu.is-card-choice.in-field{inset:auto;top:0;left:50%;transform:translateX(-50%);width:min(100%,420px);max-height:100%;grid-template-columns:repeat(auto-fit,55px);padding:8px;gap:6px}
+.player-target-menu.is-card-choice.in-field>button{width:55px;height:77px}
+.player-target-menu.card-choice-dialog{position:fixed;inset:0;margin:auto;transform:none;width:min(560px,calc(100vw - 32px));max-width:calc(100vw - 32px);max-height:calc(100dvh - 32px);height:max-content;display:grid;grid-template-columns:repeat(auto-fit,72px);grid-auto-rows:min-content;justify-content:center;align-content:start;gap:10px;padding:16px;overflow:auto;color:var(--ink)}
+.player-target-menu.card-choice-dialog>button{width:72px;height:101px}
+.player-target-menu.card-choice-dialog::backdrop{background:#193c3266}
+.card-choice-dialog .card-choice-heading{font-size:16px;font-weight:400}
+.player-target-menu.card-choice-dialog>button:has([data-card-shape="square"]){height:72px;aspect-ratio:1}
+.player-target-menu.card-choice-dialog>button [data-card-shape="square"]{display:block;width:100%;height:100%;aspect-ratio:1}
+.player-target-menu.is-panel-overlay{box-sizing:border-box;max-width:none;min-width:0;max-height:none;overflow:auto;justify-content:center;box-shadow:none}
+.player-target-menu.is-panel-overlay>.scene-button{min-width:0;width:100%;flex-shrink:0;padding-inline:4px;overflow-wrap:anywhere}

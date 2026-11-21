@@ -1,0 +1,17 @@
+{
+  "ui.match-series.title": "Серия партий",
+  "ui.match-series.format": "Формат",
+  "ui.match-series.single": "Одна партия",
+  "ui.match-series.games": "Фиксированное число партий",
+  "ui.match-series.wins": "До заданного числа побед",
+  "ui.match-series.score": "До заданной суммы очков",
+  "ui.match-series.target": "Цель серии",
+  "ui.match-series.progress": "Сыграно партий: {played}",
+  "ui.match-series.goal": "{format} · {target}",
+  "ui.match-series.complete": "Серия завершена",
+  "ui.match-series.next": "Следующая партия",
+  "ui.match-series.table-wins": "Победы",
+  "ui.match-series.table-score": "Очки",
+  "ui.match-series.invalid-target": "Укажите положительное число для цели серии.",
+  "ui.match-series.result-unavailable": "Итог серии недоступен для этого сохранения."
+}

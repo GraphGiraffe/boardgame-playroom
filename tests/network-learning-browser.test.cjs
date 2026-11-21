@@ -19,7 +19,7 @@ async function pair(run){
    await context.addInitScript(i=>{
     localStorage.setItem('playroom.player-profile.v1',JSON.stringify({version:1,id:'learner-'+i,name:'Player '+i,createdAt:1,updatedAt:1}));
     localStorage.setItem('playroom.settings.v1',JSON.stringify({sound:false,animationSpeed:'instant'}));
-    if(!localStorage.getItem('playroom.learning.v1.learner-'+i))localStorage.setItem('playroom.learning.v1.learner-'+i,JSON.stringify(Object.fromEntries(['uno','battleship','mage-brawl','gofish','oldmaid','durak','domino','ludo','snakes','checkers','tictactoe','pexeso','yatzy','klondike','spider'].map(g=>[g,{enabled:true,prompted:true,mastered:{}}]))));
+    if(!localStorage.getItem('playroom.learning.v1.learner-'+i))localStorage.setItem('playroom.learning.v1.learner-'+i,JSON.stringify(Object.fromEntries(['uno','fleet-grid','mage-brawl','gofish','oldmaid','durak','domino','ludo','snakes','checkers','tictactoe','pexeso','dice-poker','klondike','spider'].map(g=>[g,{enabled:true,prompted:true,mastered:{}}]))));
    },i);
    const page=await context.newPage();page.on('pageerror',e=>errors.push(e.message));await page.goto(process.env.PLAYROOM_TEST_ARTIFACT||server.url);await page.locator('.game-tile').first().waitFor();await page.evaluate(()=>{const update=PlayroomFirstTurnGuide.update;PlayroomFirstTurnGuide.update=context=>{window.netGuideContext=context;return update(context);};});pages.push(page);
   }
@@ -54,12 +54,20 @@ test('fresh RTC learning follows the first actionable seat and survives repeated
  await start('tictactoe',0);
  const intro=page=>page.locator('#modal-root>[data-surface-state=active] .learning-intro');
  await intro(pages[0]).waitFor();assert.equal(await intro(pages[1]).count(),0,'waiting player is not offered learning');
+ assert.equal(await pages[1].evaluate(()=>netGuideContext.modelProjection===PlayroomProtocol.projectedModel(netClient.snapshot)),true,'the compact frame and guide share one authorized model');
  await pages[0].evaluate(()=>{PlayroomFirstTurnGuide.update({...netGuideContext});PlayroomFirstTurnGuide.update({...netGuideContext});});
  await intro(pages[0]).locator('[data-learning-choice=yes]').click();await pages[0].locator('.first-turn-guide:not([hidden]) .guide-caption').waitFor();
- await pages[0].locator('.ttt-cell[data-action]:not([disabled])').first().click();
+ const lessonReads=await pages[0].evaluate(()=>{
+  const view=PlayroomViews.get('tictactoe'),read=view.tutorial;
+  let calls=0;
+  view.tutorial=Object.assign(context=>{calls++;return read(context);},read);
+  try{netView.render();return calls;}finally{view.tutorial=read;}
+ });
+ assert.equal(lessonReads,1,'the hosted renderer uses the controller lesson for the current frame');
+ await pages[0].locator('[data-sdk-guide-step~="cell"]:not([disabled])').first().click();
  await intro(pages[1]).waitFor();assert.equal(await pages[1].evaluate(()=>netClient.snapshot.revision),1);
  await intro(pages[1]).locator('[data-learning-choice=yes]').click();await pages[1].locator('.first-turn-guide:not([hidden]) .guide-caption').waitFor();
- await pages[1].locator('.ttt-cell[data-action]:not([disabled])').first().click();
+ await pages[1].locator('[data-sdk-guide-step~="cell"]:not([disabled])').first().click();
  await pages[0].waitForFunction(()=>netClient.snapshot.revision===2&&!netClient.pending&&!netGuideContext.busy);
  assert.equal(await pages[0].evaluate(()=>document.querySelector('#app').inert),false);
  assert.equal(await intro(pages[0]).count(),0,'no repeated introduction on the next turn');
@@ -81,18 +89,49 @@ test('two RTC clients persist UNO help without a host command', {timeout:90000},
 
 test('two RTC clients learn manual fleet switches and follow independently', {timeout:90000},()=>pair(async({pages,start})=>{
  for(let viewer=0;viewer<2;viewer++){
-  await start('battleship',viewer,{battle:true});const page=pages[viewer];
-  assert.equal((await mastered(page,'battleship')).own,undefined,'automatic initial field is not learned');
+  await start('fleet-grid',viewer,{battle:true});const page=pages[viewer];
+  assert.equal((await mastered(page,'fleet-grid')).own,undefined,'automatic initial field is not learned');
   const revision=await page.evaluate(()=>netClient.snapshot.revision);
   for(const [goal,selector] of [['own','[data-view-key="fleet"][data-view-value="own"]'],['enemy','[data-view-key="fleet"][data-view-value="enemy"]'],['follow','[data-view-preference="followOpponent"]']]){
-   await page.locator(selector).click();assert.equal((await mastered(page,'battleship'))[goal],goal==='enemy'?2:1,goal);
+   await page.locator(selector).click();assert.equal((await mastered(page,'fleet-grid'))[goal],goal==='enemy'?2:1,goal);
   }
   assert.equal(await page.evaluate(()=>netClient.snapshot.revision),revision,'field controls do not dispatch');
  }
 }));
 
+test('RTC Old Maid guide follows the opponent into the card picker', {timeout:60000},()=>pair(async({pages,start})=>{
+ for(let viewer=0;viewer<2;viewer++){
+  await start('oldmaid',viewer);
+  const page=pages[viewer],other=pages[1-viewer];
+  const otherBefore=await mastered(other,'oldmaid');
+  const opponent=page.locator('[data-sdk-player-choice="'+(1-viewer)+'"] .player-info');
+  const dialog=page.locator('dialog[open].card-choice-dialog');
+  const card=dialog.locator('button[data-card-index="0"]');
+  const activeGuide=page.locator('.first-turn-guide:not([hidden]) .guide-caption');
+  assert.equal(await opponent.getAttribute('data-sdk-guide-step'),'opponent');
+  await activeGuide.waitFor({timeout:5000});
+  assert.equal(await card.count(),0);
+  await opponent.click();
+  await card.waitFor();
+  assert.equal(await card.getAttribute('data-sdk-guide-step'),'card');
+  await dialog.locator('.first-turn-guide:not([hidden]) .guide-caption').waitFor({timeout:5000});
+  assert.deepEqual(await mastered(page,'oldmaid'),{opponent:1});
+  assert.deepEqual(await mastered(other,'oldmaid'),otherBefore);
+  assert.equal(await page.evaluate(()=>netClient.snapshot.revision),0);
+  await page.keyboard.press('Escape');
+  await dialog.waitFor({state:'hidden'});
+  assert.equal((await mastered(page,'oldmaid')).card,undefined);
+  await opponent.click();
+  await card.click();
+  await page.waitForFunction(()=>netClient.snapshot.revision===1&&PlayroomFirstTurnGuide.settings('oldmaid').mastered.card===1);
+  await page.evaluate(()=>netView.openHistory(0));
+  await page.locator('.history-panel[aria-busy=false]').waitFor();
+  assert.equal(await page.locator('[data-sdk-guide-step]').count(),0);
+ }
+}));
+
 test('all multiplayer packs register guided input on host and RTC guest', {timeout:240000},()=>pair(async({pages,start})=>{
- for(const game of ['uno','battleship','mage-brawl','gofish','oldmaid','durak','domino','ludo','snakes','checkers','tictactoe','pexeso','yatzy'])for(let viewer=0;viewer<2;viewer++){
+ for(const game of ['uno','fleet-grid','mage-brawl','gofish','oldmaid','durak','domino','ludo','snakes','checkers','tictactoe','pexeso','dice-poker'])for(let viewer=0;viewer<2;viewer++){
   await start(game,viewer);const page=pages[viewer],initial=await mastered(page,game),learned=[];
   for(let i=0;i<5;i++){
    await page.waitForFunction(()=>!netClient.pending&&!netGuideContext.busy,{},{timeout:10000});
@@ -146,7 +185,10 @@ test('RTC Mage local choices and both planning steps are distinct persistent goa
   await page.locator('[data-command="card-help"]').click();
   let progress=await mastered(page,'mage-brawl');assert.equal(progress.rotate,1);assert.equal(progress.help,1);assert.equal(progress.card,1);assert.equal(progress['card-second'],undefined);
   await page.locator('#modal-root [data-command="close-modal"]').first().click();
+  const revision=await page.evaluate(()=>netClient.snapshot.revision);
   await page.locator('.mage-ready').click();await page.waitForFunction(()=>PlayroomFirstTurnGuide.settings('mage-brawl').mastered.ready===1);
+  assert.equal(await page.evaluate(()=>netClient.localDraft.length),1,'first plan is a private draft');
+  assert.equal(await page.evaluate(()=>netClient.snapshot.revision),revision,'the first plan does not commit a revision');
   await clickExposedCard(page,'.mage-card:not([disabled]):not(.selected)');
   assert.equal((await mastered(page,'mage-brawl'))['card-second'],1);
   await page.locator('.mage-ready').click();await page.waitForFunction(()=>PlayroomFirstTurnGuide.settings('mage-brawl').mastered['ready-second']===1);

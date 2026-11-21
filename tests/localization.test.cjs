@@ -6,6 +6,15 @@ const vm=require('node:vm');
 const {Translator}=require('../presentation/localization.js');
 const ru={...require('../locales/ru/common.json'),...require('../locales/ru/themes.json'),...require('../locales/ru/ui-app.json')};
 
+test('pack metadata references resolve per locale without translating technical IDs or option values',()=>{
+  const catalogs={ru:{name:'Игра',label:'Кубики',help:'Общая подсказка'},en:{name:'Game',label:'Dice'}};
+  const source={name:{key:'name'},settings:{fields:[{key:'diceCount',label:{key:'label'},help:{key:'help'},default:'2',options:[{value:'2',label:{key:'label'}}]}]},file:'lang/ru.json'};
+  const translator=new Translator({catalogs,locale:'en'}),resolved=translator.resolve(source);
+  assert.equal(resolved.name,'Game');assert.equal(resolved.settings.fields[0].label,'Dice');assert.equal(resolved.settings.fields[0].help,'Общая подсказка');
+  assert.equal(resolved.settings.fields[0].key,'diceCount');assert.equal(resolved.settings.fields[0].default,'2');assert.equal(resolved.settings.fields[0].options[0].value,'2');assert.equal(resolved.file,'lang/ru.json');assert.deepEqual(source.name,{key:'name'});
+  assert.throws(()=>translator.resolve({name:{key:'missing'}}),{code:'MESSAGE_MISSING'});
+});
+
 test('Russian plural categories come from count, including teens and compound numbers',()=>{
   const t=new Translator({catalogs:{ru}});
   for(const [count,word] of [[1,'тема'],[2,'темы'],[5,'тем'],[11,'тем'],[21,'тема'],[22,'темы'],[0,'тем']]) {
@@ -76,4 +85,11 @@ test('nested message references format after projection and reject cycles',()=>{
   assert.equal(t.format({key:'score',params:{category:{key:'category'},points:12}}),'Пара · 12');
   const cyclic={key:'score',params:{points:12}};cyclic.params.category=cyclic;
   assert.throws(()=>t.format(cyclic),error=>error.code==='MESSAGE_REFERENCE_INVALID');
+});
+
+test('application common words, numeric values and units are independent of pack catalogs',()=>{
+ const Common=require('../presentation/common-format.js'),translator=new Translator({catalogs:{ru:{},en:{}},locale:'en'});
+ assert.equal(translator.resolve({label:{common:'yes'}}).label,'Yes');assert.equal(translator.withLocale('ru').resolve({label:{common:'no'}}).label,'Нет');assert.equal(translator.format({common:'infinity'}),'∞');
+ assert.equal(Common.quantity([20,40],'min','ru'),'20–40 мин');assert.equal(Common.quantity([20,40],'min','en'),'20–40 min');assert.equal(Common.value(30,{unit:'s',locale:'en'}),'30 s');assert.equal(Common.value('2',{locale:'ru'}),'2');assert.equal(Common.value(false,{locale:'ru'}),'Нет');assert.equal(Common.number(1.5,'ru'),'1,5');
+ assert.throws(()=>translator.resolve({label:{common:'unknown'}}),{code:'COMMON_TEXT_MISSING'});assert.throws(()=>Common.quantity([40,20],'min'),/COMMON_RANGE_INVALID/);
 });

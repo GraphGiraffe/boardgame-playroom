@@ -2,11 +2,10 @@
 // Reproducible application assets; no game code is executed by this build.
 const fs=require('node:fs'),path=require('node:path'),crypto=require('node:crypto');
 const esbuild=require('esbuild');
+const {trustedSources}=require('../sdk/trusted-sources.cjs');
 const root=path.resolve(__dirname,'..');
-const core=['model-values','events','random','bot-difficulty','model-inputs','model-runtime'];
 async function buildSandbox(output=path.join(root,'tmp_files/sdk-browser')){
- const coreSources=core.map(name=>({file:'sdk/core/'+name+'.js',source:fs.readFileSync(path.join(root,'core',name+'.js'),'utf8')}));
- coreSources.push({file:'sdk/support.js',source:fs.readFileSync(path.join(root,'sdk/sdk-support.js'),'utf8')});
+ const coreSources=trustedSources();
  fs.mkdirSync(output,{recursive:true});
  await esbuild.build({absWorkingDir:root,entryPoints:['sdk/browser-entry.js'],bundle:true,platform:'browser',format:'iife',globalName:'PlayroomSandbox',target:['es2022'],outfile:path.join(output,'sandbox.js'),minify:true,legalComments:'eof',define:{__PLAYROOM_TRUSTED_CORE__:JSON.stringify(coreSources),__PLAYROOM_TRUSTED_MEDIA_LIMITS__:JSON.stringify(require('../sdk/budget.cjs').BUDGET)}});
  fs.copyFileSync(require.resolve('@jitl/quickjs-wasmfile-release-sync/wasm'),path.join(output,'quickjs.wasm'));

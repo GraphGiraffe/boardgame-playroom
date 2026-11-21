@@ -815,24 +815,22 @@ test('RC17 dice retain faces across turns and player colors never repeat',async(
 }));
 
 test('RC17 ZiL+ routes and deferred badges fit phones; second die follows the first movement',{timeout:45000},async()=>fixture(async page=>{
+ // Exercise the installed pack and application mount, rather than the retired
+ // game-specific markup that bypasses the SDK scene owner.
+ await page.evaluate(()=>{const create=TabletopCore.createGame;TabletopCore.createGame=(id,options)=>{const state=create(id,{...options,seed:17,preset:'plus',firstPlayerMode:'assigned',firstPlayer:0,players:Array.from({length:6},(_,i)=>({name:'Игрок '+i}))});if(id==='snakes'){Object.assign(state.data,{phase:'move',dice:[2,5],adjusting:true});state.data.effects[0]={adjust:true,less:true,skip:true,shield:true};if(!TabletopCore.validateState(state))throw Error('Invalid adjustment fixture');}return state;};PlayroomFirstTurnGuide.setEnabled('snakes',false);});
+ await startLocal(page,'snakes');await page.locator('.sdk-numbered-board').waitFor();await page.locator('.sdk-numbered-adjust [data-adjust-value="1"]').click();
  for(const [width,height] of [[320,640],[390,844],[640,320],[844,390]]){
-  await page.setViewportSize({width,height});await scene(page,'snakes',{preset:'plus',players:Array.from({length:6},(_,i)=>({name:'Игрок '+i}))});
-  const result=await page.evaluate(()=>{rcStateOverride=TabletopCore.clone(rcSession.current);Object.assign(rcStateOverride.data,{phase:'move',dice:[2,5],adjusting:true});rcStateOverride.data.effects[0]={adjust:true,less:true,skip:true,shield:true};rcUI={viewState:{adjustDelta:rcStateOverride.move+':1'}};rcRender();const b=document.querySelector('.snakes-board').getBoundingClientRect(),dice=[...document.querySelectorAll('.layout-self .snakes-controls button')].map(e=>e.getBoundingClientRect());return {board:{x:b.x,y:b.y,width:b.width,height:b.height},dice:dice.map(r=>({x:r.x,y:r.y,width:r.width,height:r.height})),targets:document.querySelectorAll('.snakes-cell[data-action]').length,badges:document.querySelectorAll('.layout-self [data-ui-icon="lessDie"]').length,fit:b.width>120&&b.left>=0&&b.right<=innerWidth&&dice.every(r=>r.left>=0&&r.right<=innerWidth&&r.bottom<=innerHeight)};});
+  await resizeScene(page,{width,height});
+  const result=await page.evaluate(()=>{const b=document.querySelector('.sdk-numbered-board').getBoundingClientRect(),dice=[...document.querySelectorAll('.layout-actions .sdk-die')].map(e=>e.getBoundingClientRect());return {board:b.toJSON(),dice:dice.map(r=>r.toJSON()),targets:document.querySelectorAll('.sdk-numbered-cell[data-sdk-target]').length,badges:document.querySelectorAll('.layout-self [data-ui-icon="lessDie"]').length,fit:b.width>120&&b.left>=0&&b.right<=innerWidth&&dice.every(r=>r.left>=0&&r.right<=innerWidth&&r.bottom<=innerHeight)};});
   assert(result.targets>=2);assert(result.badges);assert(result.fit,JSON.stringify({width,height,result}));await page.screenshot({path:path.join(shots,`rc17-plus-${width}.png`)});
  }
- await page.setViewportSize({width:390,height:844});await scene(page,'snakes',{preset:'plus'});
- await page.evaluate(()=>{
-  const before=TabletopCore.clone(rcSession.current);Object.assign(before.data,{phase:'move',dice:[1,2]});window.rcSecondCell=Number(Object.keys(before.data.special).find(cell=>before.data.special[cell]==='second'));if(!rcSecondCell)throw Error('Fixture requires an authored second-die cell');before.data.positions[0]=rcSecondCell-1;TabletopCore.validateState(before);rcStateOverride=before;rcRender();
-  const action=TabletopCore.legalActions(before,0).find(a=>a.dieIndex===0&&a.delta===0),shot=PlayroomMotion.capture({viewer:0,action});
-  const after=TabletopCore.applyAction(before,0,action);rcStateOverride=after;rcRender();
-  window.rcFeedback=new PlayroomGameFeedback({mount:()=>document.querySelector('.table-shell')});rcFeedback.start(TabletopCore.project(before,0).events);rcFeedback.accept(TabletopCore.project(after,0).events,[],'snakes',{snapshot:shot,mode:'fast'});
- });
- await page.waitForFunction(()=>document.querySelector('.action-reveal-die svg')?.querySelectorAll('circle').length===1);
- await page.screenshot({path:path.join(shots,'rc17-first-die.png')});
+ await page.reload();await TestUI.ready(page);await page.setViewportSize({width:390,height:844});
+ await page.evaluate(()=>{const create=TabletopCore.createGame;TabletopCore.createGame=(id,options)=>{const state=create(id,{...options,seed:17,preset:'plus',firstPlayerMode:'assigned',firstPlayer:0});if(id==='snakes'){Object.assign(state.data,{phase:'move',dice:[1,2]});window.rcSecondCell=Number(Object.keys(state.data.special).find(cell=>state.data.special[cell]==='second'));if(!rcSecondCell)throw Error('Fixture requires an authored second-die cell');state.data.positions[0]=rcSecondCell-1;if(!TabletopCore.validateState(state))throw Error('Invalid second-die fixture');}return state;};PlayroomFirstTurnGuide.setEnabled('snakes',false);});
+ await startLocal(page,'snakes');await page.locator('.layout-actions .sdk-die').first().click();
+ await page.waitForFunction(()=>document.querySelector('.action-reveal-die svg')?.querySelectorAll('circle').length===1);await page.screenshot({path:path.join(shots,'rc17-first-die.png')});
  await page.waitForFunction(()=>document.querySelector('.action-reveal-die svg')?.querySelectorAll('circle').length===2);
  const middle=await page.evaluate(()=>{const t=document.querySelector('[data-entity="token-0"]').getBoundingClientRect(),c=document.querySelector('[data-motion-anchor="cell-'+rcSecondCell+'"]').getBoundingClientRect();return Math.hypot(t.x+t.width/2-c.x-c.width/2,t.y+t.height/2-c.y-c.height/2);});assert(middle<3,'pawn rests on second-die cell before second reveal');
- await page.screenshot({path:path.join(shots,'rc17-second-die.png')});await page.evaluate(async()=>{await rcFeedback.whenIdle();rcFeedback.destroy();});
- assert.equal(await page.locator('[data-entity="token-0"]').evaluate(el=>el.style.translate),'');
+ await page.screenshot({path:path.join(shots,'rc17-second-die.png')});await page.locator('.table-shell>.scene[aria-busy=false]').waitFor();assert.equal(await page.locator('[data-entity="token-0"]').evaluate(el=>el.style.translate),'');
 }));
 
 test('ZiL+ keeps board geometry and pawn size across rolling and matches cell and effect colors',async()=>fixture(async page=>{
@@ -1240,7 +1238,14 @@ test('first-turn guide follows real Old Maid choices and both Mage planning step
  assert.equal(await page.evaluate(()=>PlayroomFirstTurnGuide.settings('mage-brawl').mastered.movement),undefined,'clicking the already selected type is not a switch');
  await caption.filter({hasText:'атака'}).waitFor();
  // Bypass the suggested action type and choose any other card directly.
- await page.locator('.mage-card:not([disabled])').last().click();
+ await page.evaluate(()=>{
+  const update=PlayroomFirstTurnGuide.update;
+  PlayroomFirstTurnGuide.update=context=>{window.localMageGuideContext=context;return update(context);};
+ });
+ const card=page.locator('.layout-hand [data-view-key="mageCardId"]:enabled').last();
+ const chosen=await card.getAttribute('data-view-value');
+ await card.click();
+ await page.waitForFunction(id=>window.localMageGuideContext?.ui.viewState.mageCardId===id,chosen);
  await caption.filter({hasText:'Поверните'}).waitFor();
  await page.locator('[data-view-key="mageDirection"]').last().click();
  await caption.filter({hasText:'справку'}).waitFor();
@@ -1410,12 +1415,12 @@ test('fresh learning is offered before the first action and keeps the table usab
  const intro=page.locator('#modal-root>[data-surface-state=active] .learning-intro');
  await intro.waitFor();
  await page.evaluate(()=>PlayroomFirstTurnGuide.update({...window.freshGuideContext}));
- assert.equal(await page.locator('.tic-cell:not(:empty)').count(),0,'offer precedes any player move');
+ assert.equal(await page.locator('.sdk-mark-cell .mark-token-art').count(),0,'offer precedes any player move');
  await intro.locator('[data-learning-choice=yes]').click();
  const caption=page.locator('.first-turn-guide:not([hidden]) .guide-caption');await caption.waitFor();
  for(let turn=0;turn<2;turn++){
-  const cell=page.locator('[data-action]:not([disabled])').first();await cell.waitFor();await cell.click();
-  await page.waitForFunction(()=>!!document.querySelector('[data-action]:not([disabled])')&&!document.querySelector('#app').inert);
+  const cell=page.locator('.sdk-mark-cell:enabled').first();await cell.waitFor();await cell.click();
+  await page.waitForFunction(()=>!!document.querySelector('.sdk-mark-cell:enabled')&&!document.querySelector('#app').inert);
   assert.equal(await page.locator('#modal-root .learning-intro').count(),0,'offer is not repeated');
  }
 },{learningPrompted:false,safeSupabase:true,settings:{sound:false,animationSpeed:'fast',quickPlay:false,autoPass:false}}));
@@ -1430,11 +1435,11 @@ for(const game of ['uno','durak','gofish','oldmaid','domino','ludo','snakes','ba
  assert.equal(await page.evaluate(()=>freshHumanCommands),0,'offer precedes the first human command, including simultaneous setup');
  await page.evaluate(()=>{const c=freshGuideContext;PlayroomFirstTurnGuide.update({...c});PlayroomFirstTurnGuide.update({...c});});
  await intro.locator('[data-learning-choice=yes]').click();
- const hint=page.locator('.sdk-tutorial:not([hidden]) p');await hint.waitFor().catch(async error=>{const detail=await page.evaluate(()=>{const c=freshGuideContext,g=PlayroomViews.get(c.state.game).tutorial({...c,guideProgress:{seen:[]}});return {game:c.state.game,viewer:c.viewer,actor:c.state.modelProjection.actor,actions:c.state.modelProjection.actions.length,steps:g?.steps.map(step=>({id:step.id,available:step.available,commands:step.commands?.length})),learning:PlayroomFirstTurnGuide.settings(c.state.game),panels:[...document.querySelectorAll('.sdk-tutorial')].map(panel=>({hidden:panel.hidden,text:panel.textContent}))};});throw Error(error.message+' '+JSON.stringify(detail));});assert((await hint.innerText()).trim(),'authored tutorial text is visible');await page.locator('#app .is-guided:not([disabled])').first().waitFor();
+ const hint=page.locator('.first-turn-guide:not([hidden]) .guide-caption');await hint.waitFor().catch(async error=>{const detail=await page.evaluate(()=>{const c=freshGuideContext,g=PlayroomViews.get(c.state.game).tutorial({...c,guideProgress:{seen:[]}});return {game:c.state.game,viewer:c.viewer,actor:c.state.modelProjection.actor,actions:c.state.modelProjection.actions.length,steps:g?.steps.map(step=>({id:step.id,available:step.available,commands:step.commands?.length})),learning:PlayroomFirstTurnGuide.settings(c.state.game),panels:[...document.querySelectorAll('.sdk-tutorial')].map(panel=>({hidden:panel.hidden,text:panel.textContent}))};});throw Error(error.message+' '+JSON.stringify(detail));});assert((await hint.innerText()).trim(),'authored tutorial text is visible');await page.locator('#app .is-guided:not([disabled])').first().waitFor();
  const target=await page.evaluate(()=>{const c=freshGuideContext,g=PlayroomViews.get(c.state.game).tutorial({...c,guideProgress:{seen:[]}});return {goals:g.goals.map(goal=>goal.id),declared:PlayroomViews.get(c.state.game).tutorial.goals.map(goal=>goal.id),steps:g.steps.filter(s=>s.available!==false).map(s=>({id:s.id,commands:s.commands||[],selector:s.selector})),allowed:c.state.modelProjection.actions,blocked:document.querySelector('#app').inert,move:c.state.move,isolated:PlayroomCatalog[c.state.game].isolated};});
  assert.equal(target.blocked,false);assert.equal(await page.evaluate(()=>freshHumanCommands),0);assert.equal(target.isolated,true);assert(target.goals.length>0,'authored learning goals are present');assert.deepEqual(target.goals,target.declared,'the VM preserves the authored goal catalogue');assert(target.steps.some(step=>step.commands.length),'a real actionable guide is available');for(const step of target.steps)for(const command of step.commands)assert(target.allowed.some(allowed=>JSON.stringify(allowed)===JSON.stringify(command)),'guide commands are authorized');
  await page.setViewportSize({width:390,height:844});
- await page.waitForFunction(()=>{const n=document.querySelector('.sdk-tutorial:not([hidden]) p');if(!n)return false;const r=n.getBoundingClientRect();return r.left>=0&&r.right<=innerWidth+1&&r.top>=0&&r.bottom<=innerHeight+1;},null,{timeout:6000});
+ await page.waitForFunction(()=>{const n=document.querySelector('.first-turn-guide:not([hidden]) .guide-caption');if(!n)return false;const r=n.getBoundingClientRect();return r.left>=0&&r.right<=innerWidth+1&&r.top>=0&&r.bottom<=innerHeight+1;},null,{timeout:6000});
 },{learningPrompted:false,safeSupabase:true,settings:{sound:false,animationSpeed:'normal',quickPlay:false,autoPass:false}}));
 
 test('learning reset is confirmed, enables learning and resets only the current pack',async()=>fixture(async page=>{
@@ -1707,35 +1712,33 @@ test('UNO declaration guidance bypasses the normal input idle delay',async()=>fi
 }));
 
 test('UNO real projected declaration is guided during feedback and learned on click',async()=>fixture(async page=>{
- await scene(page,'uno',{unoMode:'manual'});
  await page.evaluate(()=>{
-  rcStateOverride=structuredClone(rcSession.current);const s=rcStateOverride,d=s.data;
-  d.drawPile.push(...d.hands[0].splice(1));s.turn=1;
-  d.uno.situations[0]={episode:0,open:true,settled:false,called:false};d.uno.declared[0]=false;
-  TabletopCore.validateState(s);rcRender();
-  const ctx={owner:rcSession,viewer:0,active:true,busy:true,state:TabletopCore.project(s,0),actions:TabletopCore.legalActions(s,0),ui:{}};
-  PlayroomFirstTurnGuide.update(ctx);
-  window.unoProbe={goals:PlayroomViews.get('uno')?.tutorial?.goals,initialTutorial:!!PlayroomViews.get('uno')?.tutorial,initialDeclared:ctx.state.scene.declared[0]};window.unoProbeNode=document.querySelector('.uno-call');
-  unoProbeNode.addEventListener('click',event=>{
-   unoProbe.clicked=true;unoProbe.trusted=event.isTrusted;
-   event.preventDefault();event.stopImmediatePropagation();
-   const action=JSON.parse(event.currentTarget.dataset.action),token=PlayroomFirstTurnGuide.capture(rcSession,0);
-   unoProbe.token=!!token;unoProbe.progressBefore=token?{...token.progress,seen:[...token.progress.seen]}:null;
-   rcStateOverride=TabletopCore.applyAction(rcStateOverride,0,action);unoProbe.domainDeclared=TabletopCore.project(rcStateOverride,0).scene.declared[0];
-   PlayroomFirstTurnGuide.committed(rcSession,0,action,token);
-  });
+  const create=TabletopCore.createGame;
+  TabletopCore.createGame=(id,options)=>{
+   if(id!=='uno')return create(id,options);
+   const state=create(id,{...options,seed:17,firstPlayerMode:'assigned',firstPlayer:0,unoMode:'manual'}),d=state.data;
+   const play=TabletopCore.availableCommands(state,0).find(c=>c.type==='play'&&c.color===undefined&&/^\d+$/.test(String(d.hands[0].find(card=>card.id===c.card)?.value)));
+   if(!play)throw Error('The fixed deal must contain a legal number card');
+   const hand=d.hands[0], keep=[hand.find(card=>card.id===play.card),hand.find(card=>card.id!==play.card)];
+   d.drawPile.push(...hand.filter(card=>!keep.includes(card)));d.hands[0]=keep;
+   TabletopCore.validateState(state);return state;
+  };
+  document.addEventListener('click',event=>{
+   if(event.target.closest('.sdk-dock-start[data-action*="declare-uno"]'))window.unoCallDuringFeedback=!!document.querySelector('.table-shell>.scene[aria-busy="true"]');
+  },true);
  });
- await page.locator('.first-turn-guide:not([hidden]) .guide-caption').filter({hasText:'Объявите'}).waitFor({timeout:400});
- await page.evaluate(()=>{unoProbe.listenerNodeStillCurrent=unoProbeNode===document.querySelector('.uno-call');unoProbe.beforeClickTutorial=!!PlayroomViews.get('uno')?.tutorial;});
- await page.locator('.uno-call').click();
- console.log('UNO tutorial probe',JSON.stringify(await page.evaluate(()=>({...unoProbe,afterTutorial:!!PlayroomViews.get('uno')?.tutorial,learned:PlayroomFirstTurnGuide.settings('uno').mastered}))));
- assert.equal(await page.evaluate(()=>PlayroomFirstTurnGuide.settings('uno').mastered['declare-uno']),1);
- await page.reload();await TestUI.ready(page);await page.locator('.game-tile').first().waitFor();
- await page.locator('[data-start=uno]').first().click();await page.locator('[data-game-mode=hotseat]').click();
- await page.evaluate(()=>{const b=PlayroomAppBridge,r=b.room();b.roomService.configure(r.id,r.ownerId,{firstPlayerMode:'assigned',firstParticipantId:r.ownerId});b.renderLobby();});
- await page.locator('[data-command=lobby-start]').click();
+ await startLocal(page,'uno');
+ const played=await page.evaluate(()=>PlayroomAppBridge.saveLibrary.current().session.current.data.hands[0][0].id);
+ await page.locator('.layout-hand [data-entity="card-'+played+'"]').click();
+ await page.locator('.sdk-table-drop').click();
+ await page.locator('.first-turn-guide:not([hidden]) .guide-caption').filter({hasText:'Объявите'}).waitFor();
+ const call=page.locator('.sdk-dock-start[data-sdk-guide-step~="declare-uno"]');
+ await call.click();
+ assert.equal(await page.evaluate(()=>window.unoCallDuringFeedback),true,'the native reaction is usable before the preceding effect settles');
+ await page.waitForFunction(()=>PlayroomFirstTurnGuide.settings('uno').mastered['declare-uno']===1&&PlayroomAppBridge.saveLibrary.current().session.current.data.uno.declared[0]);
+ await page.reload();await TestUI.ready(page);await startLocal(page,'uno');
  assert.equal(await page.evaluate(()=>PlayroomFirstTurnGuide.settings('uno').mastered['declare-uno']),1,'native declaration learning survives real app reopen for primary profile/viewer');
-}));
+},{settings:{sound:false,animationSpeed:'slow',quickPlay:false,autoPass:false}}));
 
 
 const solitaireLearningCase=defaults=>async()=>fixture(async page=>{

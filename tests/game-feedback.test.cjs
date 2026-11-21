@@ -10,11 +10,38 @@ test('feedback plays only newly committed projected sound/event IDs and keeps no
   feedback.accept([...initial,unocall],[{eventId:2,id:'uno.call'}],'uno');
   await flush();assert.equal(feedback.notice,null);assert.equal(timers.size,0,'Routine actions never create timed overlays');assert.deepEqual(audio,[{ids:['uno.call'],pack:'uno'}]);
   feedback.accept([...initial,unocall],[{eventId:2,id:'uno.call'}],'uno');assert.equal(audio.length,1,'A duplicate ACK/snapshot must be silent');
-  feedback.accept([...initial,unocall,{id:3,notice:{title:'Штраф',tone:'danger'},text:'Penalty'}],[{eventId:3,id:'penalty'}],'uno',{silent:true});
+  feedback.accept([...initial,unocall,{id:3,notice:{title:'Штраф',tone:'danger'},text:'Penalty'}],[{eventId:3,id:'penalty'}],'uno',{
+    silent:true,finalScene:{players:[],get zones(){assert.fail('silent catch-up must not construct visual checkpoints');}}
+  });
+  assert.equal(feedback.cursor,3);
   assert.equal(audio.length,1,'History/reconnect must not play queued sounds');
   assert.equal(feedback.notice,null);assert.equal(timers.size,0,'Routine actions never create timed overlays');
   for(const f of [...timers.values()])f();assert.equal(feedback.notice,null);
   feedback.destroy();
+});
+test('a route starts before capture feedback and owns the contact cue',async()=>{
+ const sequence={trigger:'move',arrival:'after-departures',departures:[{namespace:'token',id:'defender'}]};
+ const events=[{id:1,revision:1,player:0,kind:'capture',feedback:{kind:'capture',player:1}},
+  {id:2,revision:1,player:0,kind:'move',presentation:{type:'move'}}];
+ const cues=[{eventId:1,id:'attack.capture'},{eventId:2,id:'move'}];
+ for(const cancel of [false,true]){
+  const calls=[],feedback=new Feedback({mount:()=>null,play:ids=>calls.push(...ids)});
+  let impact,complete;
+  const movement=new Promise(resolve=>{complete=resolve;});
+  feedback.accept(events,cues,'route-demo',{snapshot:{action:{type:'move'}},finalScene:{motionSequence:sequence},motion:(_context,{snapshot})=>{
+   assert.equal(snapshot.sequence,sequence);
+   impact=snapshot.onRouteContact;
+   calls.push('route');return movement;
+  }});
+  await flush();
+  assert.deepEqual(calls,['route','move']);
+  const idle=feedback.whenIdle();
+  if(cancel)feedback.clear();
+  impact();impact();
+  complete();await idle;await flush();
+  assert.deepEqual(calls,cancel?['route','move']:['route','move','attack.capture']);
+  feedback.destroy();
+ }
 });
 test('dialogue sounds accompany their bubbles; instant playback prefers the reply',async()=>{
  for(const mode of ['fast','instant']){
@@ -57,6 +84,48 @@ test('movement and short feedback share their visible interval instead of adding
  }
 });
 
+test('asset animation and sound share one event group and finish before the next cue',async()=>{
+ const calls=[];
+ let finishAnimation;
+ const feedback=new Feedback({mount:()=>null,play:ids=>calls.push(...ids),
+  playAssetAnimation:(_asset,_context,mode)=>{
+   calls.push(mode);return new Promise(resolve=>{finishAnimation=resolve;});
+  }});
+ try{
+  feedback.accept([
+   {id:1,animation:{asset:{kind:'asset',id:'assets/motion.json'},target:{zone:'field'}}},{id:2},
+  ],[{eventId:1,id:'first-sound'},{eventId:2,id:'next-sound'}],'fixture',{mode:'fast'});
+  await flush();
+  assert.deepEqual(calls,['fast','first-sound']);
+  finishAnimation();
+  await feedback.whenIdle();
+  assert.deepEqual(calls,['fast','first-sound','next-sound']);
+ }finally{feedback.destroy();}
+});
+
+test('metric overlays reuse an unchanged scene and repaint after a shell patch',()=>{
+ const ui=globalThis.TabletopUI;
+ globalThis.TabletopUI={helpers:{}};
+ let scans=0;
+ const mount={querySelectorAll(){scans++;return [];}};
+ const feedback=new Feedback({mount:()=>mount});
+ try{
+  feedback.presentedScene={players:[]};
+  feedback.paintMetrics();
+  feedback.paintMetrics();
+  assert.equal(scans,1,'effect phases on the same scene share the overlay');
+  feedback.restoreMetrics();
+  feedback.paintMetrics();
+  assert.equal(scans,2,'patching the shell invalidates an unchanged scene');
+  feedback.presentedScene={players:[]};
+  feedback.paintMetrics();
+  assert.equal(scans,3,'another checkpoint paints even on the same mount');
+ }finally{
+  feedback.presentedScene=null;
+  globalThis.TabletopUI=ui;
+ }
+});
+
 test('session cancellation releases feedback waiting for an unfinished renderer',async()=>{
  const Scheduler=require('../presentation/scheduler.js'),timers=new Map();let id=0,finish;
  const executor=new Scheduler({setTimeout:(fn,ms)=>{timers.set(++id,{fn,ms});return id;},clearTimeout:key=>timers.delete(key)});
@@ -74,6 +143,11 @@ test('public event plans preserve semantic targets and scene boundaries without 
  assert.equal(plan.scenes.length,2);assert(plan.groups.every(group=>plan.scenes[group.scene]===initial));
  assert.throws(()=>Player.validate({...plan,privateCallback:()=>{}}),/DATA_INVALID/);
  const cycle={};cycle.self=cycle;assert.throws(()=>Player.validate({...plan,cycle}),/DATA_INVALID/);
+ let reads=0;
+ const shared=Object.freeze({get payload(){reads++;return {id:'field'};}});
+ const usingShared={...plan,scenes:[{field:shared},{field:shared}]};
+ Player.validate(usingShared);assert.equal(reads,1,'each shared scene branch is checked once');
+ Player.validate(usingShared);assert.equal(reads,2,'validation does not reuse results across plans');
  assert.equal(Player.validate(plan),plan);assert.equal(plan.scenes[plan.initial],initial);assert.equal(plan.scenes[plan.final],final);
  assert.deepEqual(plan.groups.map(g=>g.cues[0]?.stage),['prepare','enter',undefined,'leave']);
  assert(plan.groups.filter(g=>g.cues.length).every(g=>g.cues[0].kind==='capture'&&g.cues[0].target.participant===1));
@@ -138,12 +212,17 @@ test('field commits each queued boundary instead of the newest authority scene',
  f.accept([{id:2,feedback:{kind:'damage',player:0}}],[],'any',{initialScene:middle,finalScene:last,defer:true,motion:async()=>{}});
  const one=f.queue[0],two=f.queue[1];
  assert.equal(f.fieldScene,first);
+ assert.equal(f.sceneFor(last),first,'the native shell uses the same checkpoint object');
+ const anotherViewer={...last,viewer:1},anotherAudience={...last,audience:'player'};
+ assert.equal(f.sceneFor(anotherViewer),anotherViewer);
+ assert.equal(f.sceneFor(anotherAudience),anotherAudience);
  await f.presentCue({kind:'prepare',item:one},f.generation,{});
  await f.move(one,{});assert.equal(f.fieldScene,middle);assert.deepEqual(shown,['middle']);
  await f.presentCue({kind:'prepare',item:two},f.generation,{});
  assert.equal(f.fieldScene,middle);assert.equal(f.initialFieldScene,middle);
  await f.move(two,{});assert.equal(f.fieldScene,last);
  f.settled();assert.equal(f.fieldScene,null);assert.deepEqual(shown,['middle','last','live']);f.destroy();
+ assert.equal(f.sceneFor(last),last);
 });
 
 
@@ -164,19 +243,110 @@ test('sound and reveal share a group and both finish before the next event',asyn
 });
 
 test('successive stock transfers expose only their arrival and own their flight',async()=>{
- const Plans=require('../presentation/event-plan.js'),scene=hands=>({audience:'player',viewer:0,stockCount:6,players:hands.map((hand,player)=>({player,hand})),zones:[{id:'field',kind:'table'},...hands.map((h,owner)=>({id:'hand-'+owner,kind:'hand',owner,count:h.length}))],objects:hands.flatMap((h,owner)=>h.filter(c=>!c.hidden).map(c=>({ref:{namespace:'card',id:c.id},zone:'hand-'+owner}))),interactions:[]});
- const initial=scene([[{id:'a'}],[{hidden:true}]]),final=scene([[{id:'a'},{id:'b'}],[{hidden:true},{hidden:true}]]);
+ const Plans=require('../presentation/event-plan.js'),scene=(stockCount,hands)=>({audience:'player',viewer:0,stockCount,players:hands.map((hand,player)=>({player,hand})),zones:[{id:'field',kind:'table'},{id:'stock',kind:'stock',count:stockCount},...hands.map((h,owner)=>({id:'hand-'+owner,kind:'hand',owner,count:h.length}))],objects:hands.flatMap((h,owner)=>h.filter(c=>!c.hidden).map(c=>({ref:{namespace:'card',id:c.id},zone:'hand-'+owner}))),interactions:[]});
+ const initial=scene(8,[[{id:'a'}],[{hidden:true}]]),final=scene(6,[[{id:'a'},{id:'b'}],[{hidden:true},{hidden:true}]]);
+ const tableObject=Object.freeze({ref:{namespace:'card',id:'discard'},zone:'field'});
+ final.objects.push(tableObject);
  const events=[{id:1,transfer:{player:0,count:1,from:'stock'}},{id:2,transfer:{player:1,count:1,from:'stock'}}];
  const staged=Plans.transferScenes(events,initial,final);assert.deepEqual(staged.map(e=>e.scene.players.map(p=>p.hand.length)),[[2,1],[2,2]]);assert.equal(staged[0].scene.stockCount,7);assert.equal(final.players[1].hand.length,2);
- const calls=[];let finish;const f=new Feedback({mount:()=>null});
+ assert.deepEqual(staged.map(e=>e.scene.zones.find(zone=>zone.kind==='stock').count),[7,6]);
+ assert.equal(staged[0].scene.players[0],final.players[0],'unchanged authorized hands share their scene data');
+ assert.equal(staged[0].scene.objects,final.objects,'rewinding an anonymous back does not rebuild the visible object array');
+ assert.equal(staged[1].scene,final,'a terminal inert checkpoint reuses the complete final frame');
+ assert.equal(staged[0].scene.objects.at(-1),tableObject,'the table object is not copied for an unrelated hand arrival');
+ assert.deepEqual(staged.map(e=>e.scene.zones.filter(z=>z.kind==='hand').map(z=>z.count)),[[2,1],[2,2]]);
+ const calls=[],captures=[],prepared=[];let finish;
+ const f=new Feedback({mount:()=>null,motion:{capture(options){
+  captures.push(options);return {prepareTransfers:draws=>prepared.push(draws)};
+ }}});
  f.accept(events,[],'any',{initialScene:initial,finalScene:final,motion:(context,step)=>{calls.push(step.draws[0].player);if(calls.length===1)return new Promise(resolve=>finish=resolve);}});
- await flush();assert.deepEqual(calls,[0]);finish();await f.whenIdle();assert.deepEqual(calls,[0,1]);f.destroy();
+ await flush();assert.deepEqual(calls,[0]);assert.deepEqual(captures,[]);
+ finish();await f.whenIdle();assert.deepEqual(calls,[0,1]);
+ assert.deepEqual(captures,[{viewer:undefined,deferDepartures:true}]);
+ assert.equal(prepared[0][0],events[1].transfer);
+ assert.equal(prepared[0].length,1);
+ f.destroy();
+});
+
+test('a queued card arrival cannot replace the current table or stage its motion early',async()=>{
+ const table=id=>({id,audience:'player',viewer:0,zones:[{id:'field',kind:'table'}],objects:[]});
+ const initial=table('initial'),middle=table('middle'),final=table('final');
+ const mount={querySelector:()=>null,querySelectorAll:()=>[]};
+ for(const checkpoint of [true,false]){
+  const current={},later={},prepared=[],shown=[];
+  let finishCurrent;
+  const feedback=new Feedback({mount:()=>mount,fieldChanged:()=>shown.push(feedback.displayScene),
+   play:()=>new Promise(resolve=>{finishCurrent=resolve;}),
+   motion:{prepare:(shot,draws)=>prepared.push({shot,draws}),cancel(){}}});
+  try{
+   feedback.accept([{id:1,feedback:{kind:'damage',player:0},...(checkpoint?{scene:middle}:{})}],[{eventId:1,id:'move'}],'any',
+    {snapshot:current,initialScene:initial,finalScene:middle,mode:'instant'});
+   await flush();assert(finishCurrent,'the earlier cue is still playing');
+   const transfer={player:1,count:1,from:'stock'},moved=[];
+   const following=checkpoint?[{id:2,transfer,scene:final}]:[{id:2,reveal:{kind:'card'}},{id:3,transfer,scene:final}];
+   feedback.accept(following,[],'any',
+    {snapshot:later,initialScene:middle,finalScene:final,mode:'instant',motion:()=>moved.push(shown.at(-1))});
+   assert.equal(feedback.displayScene,middle,'keep the active table over a queued arrival');
+   feedback.refresh();
+   assert(!prepared.some(({shot})=>shot===later),'no preparation for a later commit');
+   finishCurrent();
+   await feedback.whenIdle();
+   assert.deepEqual(moved,[final],'the next table mounts before its motion starts');
+   assert.deepEqual(prepared.at(-1),{shot:later,draws:[transfer]});
+  }finally{feedback.destroy();}
+ }
+});
+
+test('movement borrows projected transfers and strips an explicit audience override',()=>{
+ const Transition=require('../presentation/transition.js');
+ const shared=Object.freeze({player:0,count:1,from:'stock'});
+ const privateTransfer=Object.freeze({player:1,count:1,from:'hand',fromPlayer:0,privateTo:[1]});
+ const events=[{id:1,transfer:shared},{id:2,transfer:privateTransfer}];
+ assert.deepEqual(Transition.transferCues(events,0),[shared]);
+ const draws=Transition.transferCues(events,1);
+ assert.equal(draws[0],shared);
+ assert.deepEqual(draws[1],{player:1,count:1,from:'hand',fromPlayer:0});
+ assert.deepEqual(Transition.transferEffects(events,0,7,1),[]);
+ assert.deepEqual(Transition.transferEffects(events,1,7,1),[{id:'7:draw:0',revision:7,...draws[1]}]);
+ assert.equal(events[1].transfer,privateTransfer);
 });
 
 test('finish audio is owned by the results dialog, not the final action queue',async()=>{
  const heard=[],feedback=new Feedback({mount:()=>null,play:ids=>heard.push(...ids)});
- feedback.accept([{id:1,kind:'finish'}],[{eventId:1,id:'victory'}],'uno',{mode:'instant'});
- await feedback.whenIdle();assert.deepEqual(heard,[]);feedback.destroy();
+ let reads=0;
+ const cues=[[3,'victory'],[2,'draw'],[1,'move'],[2,'uno.call'],[1,undefined]].map(([eventId,id])=>({
+  get eventId(){reads++;return eventId;},id
+ }));
+ feedback.accept([{id:1},{id:2},{id:3,kind:'finish'}],cues,'uno',{mode:'instant'});
+ await feedback.whenIdle();assert.deepEqual(heard,['move','draw','uno.call']);
+ assert.equal(reads,cues.length,'each authorized cue is routed by event ID once');
+ feedback.destroy();
+});
+
+test('turn handoff waits for an already queued independent reaction',async()=>{
+ const calls=[],release=new Map();
+ const panels=[0,1].map(index=>({dataset:{playerIndex:String(index)},classList:{toggle(){}},
+  setAttribute(){},removeAttribute(){},getClientRects:()=>[{}]}));
+ const stage={dataset:{turnPlayer:'0'},querySelector:()=>null,querySelectorAll:()=>panels};
+ const mount={querySelector:selector=>selector==='.app-game-layout'?stage:null,querySelectorAll:()=>[]};
+ const feedback=new Feedback({mount:()=>mount,motion:{cancel(){},pulseParticipant(panel,{role}){
+  calls.push(`${role}:${panel.dataset.playerIndex}`);
+ }},play:([id])=>{calls.push(id);return new Promise(resolve=>release.set(id,resolve));}});
+ try{
+  feedback.accept([{id:1}],[{eventId:1,id:'play'}],'uno');
+  await flush();
+  assert.deepEqual(calls,['play']);
+  stage.dataset.turnPlayer='1';
+  feedback.accept([{id:2}],[{eventId:2,id:'uno.call'}],'uno');
+  release.get('play')();
+  await flush();
+  assert.deepEqual(calls,['play','uno.call']);
+  assert.equal(stage.dataset.presentationTurn,'0');
+  release.get('uno.call')();
+  await feedback.whenIdle();
+  assert.deepEqual(calls,['play','uno.call','outgoing:0','incoming:1']);
+  assert.equal(stage.dataset.presentationTurn,undefined);
+ }finally{feedback.destroy();}
 });
 
 test('each card reveal resolves its own actor hand instead of inheriting the penalty receiver origin',()=>{
@@ -185,17 +355,28 @@ test('each card reveal resolves its own actor hand instead of inheriting the pen
  f.accept([{id:1,player:1,kind:'play',reveal:{kind:'card',card:{id:4,value:'+4'}}},{id:2,player:0,kind:'draw',transfer:{player:0,count:4,from:'stock'}}],[],'uno',{snapshot:shot,defer:true});assert.equal(f.queue[0].snapshot.actor,1);assert.deepEqual(f.queue[0].snapshot.origin,sender);assert.equal(f.queue[0].snapshot.playedFrom,null);assert.equal(shot.actor,0,'original capture is not mutated');f.destroy();
 });
 
-test('audio readiness gates the simultaneous presentation group and cancellation drops waiting cues',async()=>{
- for(const cancelled of [false,true]){
-  let release;const stages=[],feedback=new Feedback({prepareAudio:()=>new Promise(resolve=>release=resolve),mount:()=>null});
-  feedback.presentCue=({kind})=>{stages.push(kind);};
+test('a gesture still unlocking audio cannot hold the frame or replay its cue late',async()=>{
+ const Audio=require('../core/audio.js');
+ let unlock;
+ const context={state:'suspended',destination:{},createGain:()=>({gain:{},connect(){}}),resume:()=>new Promise(resolve=>{
+  unlock=()=>{context.state='running';resolve();};
+ })};
+ const audio=new Audio({enabled:true,contextFactory:()=>context}),ready=audio.unlock(),stages=[],played=[];
+ const feedback=new Feedback({mount:()=>null,play:(ids,pack,phase)=>audio.batch(ids,{pack,signal:phase.signal}).then(result=>played.push(result))});
+ const present=feedback.presentCue.bind(feedback);
+ feedback.presentCue=(cue,...args)=>{stages.push(cue.kind);return present(cue,...args);};
+ try{
   feedback.accept([{id:1,text:'Ход'}],[{eventId:1,id:'move'}],'uno',{mode:'instant'});
-  await flush();assert.deepEqual(stages,[],'no visual/sound effects start while first audio unlock is pending');
-  if(cancelled)feedback.clear();release(true);await flush();
-  if(cancelled)assert.deepEqual(stages,[],'an obsolete presentation cannot resume after unlock');
-  else assert.deepEqual(stages,['prepare','enter','sound','leave']);
-  feedback.destroy();
- }
+  await flush();
+  assert.equal(context.state,'suspended');
+  assert.deepEqual(stages,['prepare','enter','hold','sound','leave']);
+  assert.deepEqual(played,[false]);
+  await feedback.whenIdle();
+  unlock();
+  assert.equal(await ready,true);
+  await flush();
+  assert.deepEqual(played,[false],'the completed cue is not replayed after unlock');
+ }finally{feedback.destroy();audio.stop();}
 });
 
 

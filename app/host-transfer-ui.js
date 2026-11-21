@@ -213,8 +213,10 @@
         value.payload = payload;
         value.digest = digest;
         value.revision = r.revision;
+        value.durableSeriesLobby = !lobby.cloudRoomId && !!r.seriesProgress;
         try {
-          await root.PlayroomData.transact(() =>
+          if (value.durableSeriesLobby) await N().transferStore.stageLobbyHandoff(B().profile().id, payload);
+          else await root.PlayroomData.transact(() =>
             root.PlayroomData.setItem(
               lobbyKey(r.id),
               JSON.stringify({
@@ -252,7 +254,7 @@
         (await hash(payload.pack)) !== r.packDigest
       )
         fail('HOST_TRANSFER_PACK_MISMATCH');
-      await B().packs.install(B().packs.prepare(pack), { activate: true });
+      await B().packs.install(await B().packs.prepareInstall(pack), { activate: true });
       value.release = await N().transferStore.acquireHostLock(r.sessionId);
       try {
         await N().transferStore.stageTransfer(
@@ -317,14 +319,16 @@
             fail('HOST_TRANSFER_NOT_COMMITTED');
         }
         if (value.stagedLobby) {
-          await root.PlayroomData.transact(() => {
+          if (value.durableSeriesLobby) await N().transferStore.commitLobbyHandoff(value.roomId, value.id);
+          else await root.PlayroomData.transact(() => {
             const saved = JSON.parse(root.PlayroomData.getItem(lobbyKey(value.roomId)));
             saved.state = 'committed';
             root.PlayroomData.setItem(lobbyKey(value.roomId), JSON.stringify(saved));
           });
           value.committed = true;
-          await N().transferPromoteLobby({ payload: value.payload, peers: value.peers });
-          value.release?.();
+          await N().transferPromoteLobby({ payload: value.payload, peers: value.peers,
+            retainedLobby: value.durableSeriesLobby ? { id: value.id, release: value.release } : null });
+          if (!value.durableSeriesLobby) value.release?.();
           value.release = null;
           value.active = true;
           for (const [id, peer] of value.peers) {
@@ -337,7 +341,7 @@
               })
               .catch(() => {});
           }
-          await root.PlayroomData.transact(() =>
+          if (!value.durableSeriesLobby) await root.PlayroomData.transact(() =>
             root.PlayroomData.removeItem(lobbyKey(value.roomId)),
           );
           return { ok: true };
@@ -423,7 +427,9 @@
     for (const peer of value.peers.values()) peer.close();
     value.release?.();
     try {
-      if (value.stagedLobby)
+      if (value.stagedLobby && value.durableSeriesLobby)
+        await N().transferStore.discardLobbyHandoff(value.roomId, value.id);
+      else if (value.stagedLobby)
         await root.PlayroomData.transact(() =>
           root.PlayroomData.removeItem(lobbyKey(value.roomId)),
         );
@@ -637,6 +643,26 @@
   async function recoverLobbies() {
     if (lobbyRecoveryFlight) return lobbyRecoveryFlight;
     const run = Promise.resolve().then(async () => {
+      const profileId = B().profile?.()?.id;
+      if (profileId && !N().hasActiveRoom()) {
+        const checkpoints = await N().transferStore.listLobbyHandoffs(profileId).catch(() => []);
+        for (const { id, roomId, payload } of checkpoints) {
+          let release;
+          try {
+            release = await N().transferStore.acquireHostLock('lobby:' + roomId);
+            // A live tab keeps this lock until the lobby is consumed or left.
+            if (B().profile()?.id !== profileId || N().hasActiveRoom()) continue;
+            await N().transferPromoteLobby({ payload: { ...payload, pack: await payload.pack.text() },
+              retainedLobby: { id, release, restoring: true } });
+            release = null;
+            break;
+          } catch {
+            // Keep the committed checkpoint for a later recovery attempt.
+          } finally {
+            release?.();
+          }
+        }
+      }
       const keys = Array.from({ length: root.PlayroomData.length }, (_, i) =>
         root.PlayroomData.key(i),
       ).filter((key) => key?.startsWith('playroom.lobby-transfer.v1.'));

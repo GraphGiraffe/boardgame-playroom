@@ -3,13 +3,34 @@ const {test} = require('node:test');
 const assert = require('node:assert/strict');
 const Core = require('../core/engine.js');
 const Session = require('../core/session.js');
+const Series = require('../application/match-series.js');
+
+test('match series counts draws, carries scores by player ID, and rejects a repeated or out-of-order match',()=>{
+  const roster=['host','guest'];
+  const record=(series,id,playerIds,winners,metrics)=>Series.record(series,{id,number:series.played+1,playerIds,result:{winners,metrics}});
+  const games=record(Series.create('games',{mode:'games',target:1},roster),'draw',roster,[]);
+  assert.deepEqual(Series.table(games),{complete:true,field:'wins',leaders:roster});
+  const wins=record(Series.create('wins',{mode:'wins',target:1},roster),'match',roster,[1]);
+  assert.deepEqual(Series.table(wins).leaders,['guest']);
+  const points=Series.create('score',{mode:'score',target:10,metricId:'points'},roster);
+  const first=record(points,'first',roster,[1],[{id:'points',values:[1,6]}]);
+  assert.equal(Series.record(first,{id:'first',number:1}),first);
+  assert.throws(()=>Series.record(first,{id:'first',number:2,playerIds:roster}),{code:'SERIES_MATCH_OUT_OF_ORDER'});
+  assert.throws(()=>record(first,'bad',roster,[1],[{id:'points',values:[1,8],display:'ranking'}]),{code:'SERIES_SCORE_INVALID'});
+  const second=record(first,'second',['guest','host'],[0],[{id:'points',values:[4,3]}]);
+  assert.deepEqual(second.totals.map(row=>row.points),[4,10]);
+  assert.deepEqual(Series.table(second),{complete:true,field:'points',leaders:['guest']});
+  const match=Series.entry(first,roster),session=new Session(Core,'session-fixture',{matchSeries:match});
+  assert.deepEqual(Session.restore(Core,session.export()).options.matchSeries,match);
+});
 
 Core.register({
   project(out,viewer,state){const data=Core.clone(state.data);out.data={...data,hands:data.hands.map((hand,index)=>viewer===index?hand:hand.map(()=>({hidden:true}))),drawPile:data.drawPile.map(()=>({hidden:true}))};},
   id: 'session-fixture', name: 'Session fixture', min: 2, max: 2,
   description: 'Deterministic session integration fixture', rules: ['Advance one step'],
   presets: [{id: 'standard', label: 'Standard'}], scoreLabel: 'points',
-  create(state) {
+  create(state,options) {
+    assert.equal(options.matchSeries,undefined,'series receipts stay outside pack rules');
     state.data = {count: 0, hands: [[{id: 'a', value: 'secret-a'}], [{id: 'b', value: 'secret-b'}]],
       drawPile: [{id: 'c', value: 'secret-c'}], payload: Array(32).fill('shared-board-component')};
   },
@@ -322,13 +343,39 @@ test('library metadata index lists and finds references without loading a full h
   assert.equal(row.move,20);assert.equal(row.invalid,undefined);assert.equal(row.game,session.game);
   assert.deepEqual(fresh.references(session.game,session.packVersion),['indexed-game']);
   row.players[0]='changed';assert.notEqual(fresh.list()[0].players[0],'changed');
+  const readOnly=library.openHistory('indexed-game');
+  assert.equal(library.openHistory('indexed-game'),readOnly);
+  const playable=library.open('indexed-game');step(playable);
+  assert.equal(readOnly.current.move,20,'opening a playable copy keeps the archive at its recorded revision');
   step(session);library.write(session,'indexed-game');assert.equal(fresh.list()[0].move,21);
+  assert.equal(library.openHistory('indexed-game').current.move,21);
+  assert.notEqual(library.openHistory('indexed-game'),readOnly);
   library.remove('indexed-game');assert.deepEqual(fresh.list(),[]);
 });
 
 test('removed local saves preserve the library error instead of throwing during localization',()=>{
  const Library=require('../app/library.js');const library=new Library(()=>({getItem:()=>null}),Core,Session);
  assert.throws(()=>library.write(create({seed:'removed-local'}),'removed-local'),error=>error.code==='LIBRARY_REMOVED'&&error.name==='Error');
+});
+
+test('a saved series continues only from its latest match, including legacy library headers',()=>{
+  const Library=require('../application/library.js'),data=new Map();
+  const store={get length(){return data.size;},key:i=>[...data.keys()][i],getItem:key=>data.get(key)??null,setItem:(key,value)=>data.set(key,value),removeItem:key=>data.delete(key)};
+  const library=new Library(()=>store,Core,Session),players=['a','b'];
+  const series=Series.create('first',{mode:'wins',target:2},players),initial=Series.entry(series,players);
+  const first=create({matchSeries:initial}),other=create({matchSeries:Series.entry(Series.create('other',{mode:'wins',target:1},players),players)});
+  library.activate(first,'first');
+  assert.deepEqual(library.list()[0].matchSeries,{id:'first',number:1});
+  library.activate(other,'other');
+  assert.equal(library.isLatestSeriesMatch(first,'first'),true);
+  assert.equal(library.isLatestSeriesMatch(first,'missing'),false);
+  const progress=Series.record(series,{id:'first',number:1,playerIds:players,result:{winners:[]}});
+  const second=create({matchSeries:Series.entry(progress,players)}),legacy=JSON.parse(library.encode(second,'second'));
+  delete legacy.librarySummary.matchSeries;
+  store.setItem('playroom.paused.v1.second',JSON.stringify(legacy));
+  assert.equal(library.isLatestSeriesMatch(first,'first'),false);
+  assert.equal(library.isLatestSeriesMatch(second,'second'),true);
+  assert.equal(library.isLatestSeriesMatch(other,'other'),true);
 });
 
 test('active save identity never restores a session and follows replacement and removal',()=>{

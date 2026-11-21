@@ -86,9 +86,15 @@
    if(value.eventBase!==null&&(!previous||previous.cursor!==value.eventBase))throw Error('PROJECTION_EVENT_GAP');
    const chain=await eventHash(value.events,value.eventBase===null?zero:previous.eventsHash);
    if(await hash({position:semantic(body),eventsHash:chain,eventCursor:value.eventCursor})!==value.hash)throw Error('PROJECTION_HASH_MISMATCH');
-   const events=value.eventBase===null?value.events:[...previous.events,...value.events];
-   if(body.kind==='snapshot'&&(!previous||body.revision>=previous.body.revision))live={key,body:P().immutable(body),hash:value.hash,eventsHash:chain,cursor:value.eventCursor,events:P().composeArray(events)};
-   return P().composeRecord({...body,eventBase:value.eventBase,eventCursor:value.eventCursor,events:value.events,projectionHash:value.hash});
+   const result=P().composeRecord({...body,eventBase:value.eventBase,eventCursor:value.eventCursor,events:value.events,projectionHash:value.hash});
+   if(body.kind==='snapshot'&&(!previous||body.revision>=previous.body.revision)){
+    // Duplicate hashes can return a full authorized checkpoint. Retain its
+    // owned journal, appending only when this verified frame adds events.
+    const delta=result.events;
+    const events=value.eventBase===null?delta:delta.length?P().composeArray(previous.events.concat(delta)):previous.events;
+    live={key,body:P().immutable(body),hash:value.hash,eventsHash:chain,cursor:value.eventCursor,events};
+   }
+   return result;
   });
  }
  return Object.freeze({encoder,decoder,diff,apply,packOps,unpackOps});

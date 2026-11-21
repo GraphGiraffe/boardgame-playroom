@@ -3,6 +3,7 @@ const TestUI=require('./browser-origin.cjs');
 const {test}=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path'),http=require('node:http');
 const {chromium,executablePath}=require('../scripts/codex/browser.cjs');
 const root=path.resolve(__dirname,'..');
+const standalone=process.env.PLAYROOM_SDK_PLAYER_HTML;
 const hasUno=fs.existsSync(path.join(root,'packs/uno/manifest.json'))&&fs.existsSync(path.join(root,'installed-packs.js'));
 
 test('host archive keeps its original private viewer when an earlier recovery seat is vacant',
@@ -31,11 +32,12 @@ test('host archive keeps its original private viewer when an earlier recovery se
     }finally{await context.close();await browser.close();await new Promise(resolve=>listener.close(resolve));}
   });
 
-function server(){
+function server(main){
   const types={'.html':'text/html','.js':'text/javascript','.css':'text/css','.json':'application/json','.svg':'image/svg+xml'};
   const s=http.createServer((req,res)=>{
-    const u=new URL(req.url,'http://localhost'),rel=u.pathname==='/'?'index.html':u.pathname.slice(1),file=path.resolve(root,rel);
-    if(!file.startsWith(root+path.sep)||!fs.existsSync(file)||fs.statSync(file).isDirectory()){
+    const u=new URL(req.url,'http://localhost'),rel=u.pathname==='/'?'index.html':u.pathname.slice(1),entry=u.pathname==='/'&&main;
+    const file=entry?path.resolve(entry):path.resolve(root,rel);
+    if((!entry&&!file.startsWith(root+path.sep))||!fs.existsSync(file)||fs.statSync(file).isDirectory()){
       res.writeHead(404);return res.end();
     }
     res.writeHead(200,{'Content-Type':types[path.extname(file)]||'application/octet-stream','Cache-Control':'no-store'});
@@ -84,6 +86,75 @@ async function identity(page){
     return {participantId:debug.participantId,roomId,token:saved?.token};
   });
 }
+
+test('LAN-01 UI: open UNO reaction survives host restart and a new presentation acknowledgement',
+  {timeout:75000,skip:!standalone&&!hasUno},async()=>{
+    const {server:listener,url}=await server(standalone);
+    const browser=await chromium.launch({headless:true,executablePath:executablePath()});
+    const contexts=await Promise.all([{viewport:{width:1000,height:780}},{viewport:{width:390,height:740},isMobile:true,hasTouch:true}].map(options=>browser.newContext({playroomProfile:false,...options})));
+    const [host,guest]=await Promise.all(contexts.map(context=>context.newPage())),errors=[];
+    for(const page of [host,guest])page.on('pageerror',error=>errors.push(error.message));
+    try{
+      await Promise.all([profile(host,'Хост',url),profile(guest,'Игрок',url)]);
+      await TestUI.openGame(host,'uno','network');
+      await host.locator('[data-room-auto-start]').uncheck();
+      await host.evaluate(()=>{
+        const b=PlayroomAppBridge,room=b.room(),create=TabletopCore.createGame;
+        b.roomService.setLocalSeat(room.id,room.ownerId,'seat-2',{kind:'empty',nickname:'Игрок'});b.renderLobby();
+        TabletopCore.createGame=(id,options)=>{
+          if(id!=='uno')return create(id,options);
+          const state=create(id,{...options,seed:17,firstPlayer:0,firstPlayerMode:'assigned',unoMode:'manual'});
+          const hand=state.data.hands[0],played=TabletopCore.availableCommands(state,0).find(action=>action.type==='play'&&hand.some(card=>card.id===action.card&&/^\d+$/.test(String(card.value))));
+          if(!played)throw Error('Expected a playable number card');
+          const kept=[hand.find(card=>card.id===played.card),hand.find(card=>card.id!==played.card)];
+          state.data.drawPile.push(...hand.filter(card=>!kept.includes(card)));state.data.hands[0]=kept;
+          TabletopCore.validateState(state);window.recoveryCard=played.card;return state;
+        };
+      });
+      await pair(host,guest);await guest.locator('#net-client-join').evaluate(form=>form.requestSubmit());
+      await guest.locator('[data-net-seat="seat-2"]').click();await guest.locator('[data-net-action=ready]').click();
+      await host.locator('[data-command=lobby-ready]').click();await host.locator('[data-command=lobby-start]:not([disabled])').click();
+      await host.locator('.layout-hand [data-entity="card-'+await host.evaluate(()=>recoveryCard)+'"]').click();
+      await host.waitForFunction(()=>PlayroomNetworkLibrary.playerControlContext()?.snapshot.reactionWindows.some(window=>window.owner===0&&!window.protected));
+      const before=await host.evaluate(()=>{
+        const snapshot=PlayroomNetworkLibrary.playerControlContext().snapshot;
+        return {session:snapshot.sessionId,epoch:snapshot.authorityEpoch,revision:snapshot.revision,episode:snapshot.reactionWindows.find(window=>window.owner===0).id};
+      });
+
+      await host.addInitScript(()=>{
+        let Client;
+        Object.defineProperty(window,'PlayroomSessionClient',{configurable:true,get:()=>Client,set(value){
+          Client=value;
+          const acknowledge=value.prototype.presentationReady;
+          value.prototype.presentationReady=function(frame=this.snapshot){
+            if(!frame?.reactionWindows.some(window=>window.owner===frame.viewer))return acknowledge.call(this,frame);
+            return new Promise(resolve=>{window.finishRecoveryPresentation=async()=>{const reply=await acknowledge.call(this,frame);resolve(reply);return reply;};});
+          };
+        }});
+      });
+      await host.reload();await savedAction(host,'[data-network-continue]');
+      await guest.reload();await pair(host,guest);
+      await guest.locator('[data-net-action=ready]').click();await host.locator('[data-command=lobby-ready]').click();
+      await host.locator('[data-command=lobby-start]:not([disabled])').click();
+      await host.waitForFunction(()=>typeof window.finishRecoveryPresentation==='function');
+      const restored=await host.evaluate(id=>{
+        const snapshot=PlayroomNetworkLibrary.playerControlContext().snapshot;
+        const window=snapshot.reactionWindows.find(window=>window.id===id);
+        return {session:snapshot.sessionId,epoch:snapshot.authorityEpoch,revision:snapshot.revision,owner:window?.owner,protected:window?.protected};
+      },before.episode);
+      assert.deepEqual(restored,{...restored,session:before.session,revision:before.revision,owner:0,protected:true});
+      assert.notEqual(restored.epoch,before.epoch);
+      assert.equal((await host.evaluate(()=>finishRecoveryPresentation())).ok,true);
+      await host.locator('.network-game [data-action*="declare-uno"]:enabled').click();
+      await guest.waitForFunction(expected=>{
+        const snapshot=PlayroomNetworkLibrary.playerControlContext()?.snapshot;
+        return snapshot?.sessionId===expected.session&&snapshot.revision===expected.revision+1&&!snapshot.reactionWindows.length;
+      },before);
+      assert.deepEqual(errors,[]);
+    }finally{
+      await Promise.all(contexts.map(context=>context.close()));await browser.close();await new Promise(resolve=>listener.close(resolve));
+    }
+  });
 
 for(const [mode,guestCount] of [['network-player',1],['network-table',2]]){
   test(`LAN-01 UI: ${mode} recovers the entire UNO session after host reload and re-pairs original seats`,

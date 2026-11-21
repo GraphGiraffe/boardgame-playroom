@@ -22,6 +22,83 @@ async function openProfileAccount(page){
  await page.locator('[data-hub-page=profile]').click();await page.locator('[data-profile-account]').click();
 }
 
+test('welcome account action keeps its icon through login, account settings and logout',{timeout:45000},async()=>{
+ const server=await serveBrowserFixture(path.resolve(__dirname,'..'));
+ const browser=await chromium.launch({headless:true,executablePath:executablePath()}).catch(async error=>{await server.close();throw error;});
+ let logouts=0;
+ const user={id:'welcome-account',email:'welcome@example.test',is_anonymous:false};
+ try{
+  const context=await browser.newContext({viewport:{width:390,height:844},reducedMotion:'reduce',playroomProfile:false});
+  await installProvider(context,accountSyncRoute(route=>{
+   const url=route.request().url();
+   const requestURL=new URL(url);
+   if(requestURL.pathname.endsWith('/logout')){
+    assert.equal(requestURL.searchParams.get('scope'),'local');
+    logouts++;
+    return route.fulfill({json:{}});
+   }
+   if(url.endsWith('/user'))return route.fulfill({json:user});
+   if(url.includes('/auth/v1/token'))return route.fulfill({json:{user,access_token:'fixture-access',refresh_token:'fixture-refresh',expires_in:3600}});
+   if(url.endsWith('/playroom_social'))return route.fulfill({json:{profile:{id:user.id,username:'fixture',nickname:'Облачный игрок'},friends:[],rooms:[],invitations:[]}});
+   if(url.endsWith('/playroom_cloud_saves_rpc'))return route.fulfill({json:{saves:[],used:0}});
+   return route.fulfill({json:{friends:[],rooms:[],conversations:[],groups:[],invitations:[]}});
+  }));
+  const page=await context.newPage(),errors=[];page.setDefaultTimeout(5000);page.on('pageerror',error=>errors.push(error.message));
+  const active=activeSurface(page),name=active.locator('#profile-form [name=playerName]'),entry=active.locator('.welcome-modal [data-account-open]');
+  const back=()=>active.locator('.modal-head [data-command=close-modal]').click();
+  const heading=()=>active.locator('.modal-head h2').innerText();
+  await page.goto(server.url);
+  await name.fill('Мой ник');
+  assert.equal(await entry.innerText(),'Войти');
+  await entry.evaluate(button=>{window.welcomeIcon=button.querySelector('[data-ui-icon=cloud]');});
+  await entry.click();
+  const login=active.locator('[data-account-form=login]');
+  await login.locator('[name=email]').fill(user.email);await login.locator('[name=password]').fill('password123');
+  await login.locator('[type=submit]').click();
+  await active.locator('[data-account-mode=online]').waitFor();
+  assert.equal(await heading(),'Аккаунт');
+  await back();
+  assert.equal(await entry.innerText(),'Аккаунт');
+  assert.equal(await name.inputValue(),'Мой ник');
+  assert(await entry.evaluate(button=>button.querySelector('[data-ui-icon=cloud]')===window.welcomeIcon&&document.activeElement===button));
+  await entry.click();
+  assert.equal(await heading(),'Аккаунт');
+  await active.locator('[data-cloud-default]').check();
+  assert(await active.locator('[data-cloud-default]').isChecked());
+  await active.locator('[data-command=profile-edit]').click();
+  const nickname=active.locator('#local-profile-editor [name=nickname]');
+  assert.equal(await nickname.inputValue(),'Мой ник');
+  await nickname.fill('Новый ник');
+  await active.locator('[data-local-profile-avatar]').click();
+  const choice=active.locator('[data-avatar-option]:not([data-avatar-option=""])').first();
+  const avatar=await choice.getAttribute('data-avatar-option');
+  await choice.click();
+  await active.locator('button[type=submit][form=local-profile-editor]').click();
+  await active.locator('[data-account-mode=online]').click();
+  assert.equal(await heading(),'Онлайн аккаунт');
+  for(const [mode,form] of [['username','username'],['password-change','password-change'],['recover','recover']]){
+   await active.locator('[data-account-mode='+mode+']').click();
+   await active.locator('[data-account-form='+form+']').waitFor();
+   await back();assert.equal(await heading(),'Онлайн аккаунт');
+  }
+  await active.locator('[data-account-mode=logout]').click();
+  await active.locator('[data-confirm-cancel]').click();
+  assert.equal(logouts,0);assert.equal(await heading(),'Онлайн аккаунт');
+  await active.locator('[data-account-mode=logout]').click();
+  await active.locator('[data-confirm-accept]').click();
+  await login.waitFor();
+  assert.equal(logouts,1);assert.equal(await page.evaluate(()=>PlayroomAccountUI.service.snapshot().kind),'local');
+  await back();
+  assert.equal(await entry.innerText(),'Войти');
+  assert.equal(await name.inputValue(),'Новый ник');
+  assert(await entry.evaluate(button=>button.querySelector('[data-ui-icon=cloud]')===window.welcomeIcon));
+  await active.locator('[data-profile-play-label]').click();
+  await active.locator('#profile-form').waitFor({state:'detached'});
+  assert.deepEqual(await page.evaluate(()=>[PlayroomAppBridge.profile().name,PlayroomAppBridge.profile().avatar]),['Новый ник',avatar]);
+  assert.deepEqual(errors,[]);
+ }finally{await browser.close();await server.close();}
+});
+
 test('cloud account: optional launch, two isolated clients, remembered login and local logout',{timeout:40000},async()=>{
  const server=await serveBrowserFixture(path.resolve(__dirname,'..'));
  const browser=await (process.env.LAB_ENGINE==='webkit'?require('playwright-core').webkit:chromium).launch(process.env.LAB_ENGINE==='webkit'?{headless:true}:{headless:true,executablePath:executablePath(),args:['--no-sandbox','--disable-background-networking']}).catch(async error=>{await server.close();throw error;});
@@ -131,7 +208,7 @@ test('cloud account: normal password change checks current password and clears f
  const context=await browser.newContext({viewport:{width:390,height:740}}),page=await context.newPage();page.setDefaultTimeout(5000);let updates=0;
  try{
   await installProvider(context,route=>{const r=route.request(),user={id:'a',email:'alice@example.test'};if(r.url().includes('grant_type=password')&&r.postDataJSON().password==='wrong-password')return route.fulfill({status:400,contentType:'application/json',body:'{"code":400,"error_code":"invalid_credentials"}'});if(r.method()==='PUT'){updates++;const body=r.postDataJSON();assert.equal(body.password,'new-password123');assert.equal(body.current_password,'old-password123');return route.fulfill({status:200,contentType:'application/json',body:JSON.stringify(user)});}return route.fulfill({status:200,contentType:'application/json',body:JSON.stringify(r.url().endsWith('/user')?user:{user,access_token:'test',refresh_token:'test',expires_in:3600})});});
-  await page.goto(server.url);await openProfileAccount(page);await page.locator('[name=email]').fill('alice@example.test');await page.locator('[name=password]').fill('old-password123');await page.locator('.account-form [type=submit]').click();await page.locator('[data-account-mode=password-change]').click();
+  await page.goto(server.url);await openProfileAccount(page);await page.locator('[name=email]').fill('alice@example.test');await page.locator('[name=password]').fill('old-password123');await page.locator('.account-form [type=submit]').click();await accountUI(page,'[data-account-mode=online]').click();await accountUI(page,'[data-account-mode=password-change]').click();
   const form=page.locator('[data-account-form=password-change]');await form.locator('[name="current-password"]').fill('wrong-password');await form.locator('[name=password]').fill('new-password123');await form.locator('[type=submit]').click();await page.getByText('Неверный текущий пароль. Проверьте его и повторите попытку.',{exact:true}).waitFor();
   await form.locator('[name="current-password"]').fill('old-password123');await form.locator('[type=submit]').click();await page.getByText('Пароль обновлён.',{exact:true}).waitFor();assert.equal(updates,1);assert.equal(await page.locator('#modal-root>[data-surface-state=active] .account-content input[type=password]').count(),0);
  }finally{await browser.close();await server.close();}

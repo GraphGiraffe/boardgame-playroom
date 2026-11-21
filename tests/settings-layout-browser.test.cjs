@@ -236,18 +236,87 @@ test('account identity: startup sync repaints profile, owner cache survives netw
 });
 
 
-test('shared headers keep separators on screens only in both orientations',{timeout:45000},async()=>{
- const server=await serveBrowserFixture(root),browser=await chromium.launch({headless:true,executablePath:executablePath(),args:['--no-sandbox','--disable-background-networking']}),context=await browser.newContext({viewport:{width:390,height:844},hasTouch:true,reducedMotion:'reduce'}),page=await context.newPage(),errors=[];
+test('shared surfaces center within their width caps and keep separators on screens only',{timeout:45000},async()=>{
+ const server=await serveBrowserFixture(root),browser=await chromium.launch({headless:true,executablePath:executablePath(),args:['--no-sandbox','--disable-background-networking']}),context=await browser.newContext({viewport:{width:1280,height:854},hasTouch:true,reducedMotion:'reduce',playroomProfile:false}),page=await context.newPage(),errors=[];
  page.setDefaultTimeout(5000);page.on('pageerror',error=>errors.push(error.message));const net=await require('./account-sync-fixture.cjs').installFetch(context,async route=>route.fulfill({json:{}})),active=()=>TestUI.activeSurface(page);
  const check=async()=>{const header=active().locator('.modal-head').first(),line=await header.evaluate(el=>{const c=getComputedStyle(el);return {surface:el.closest('.modal').dataset.uiSurface,width:c.borderBottomWidth,style:c.borderBottomStyle,color:c.borderBottomColor};});assert(['screen','panel'].includes(line.surface));assert.equal(line.width,line.surface==='screen'?'1px':'0px');if(line.surface==='screen'){assert.equal(line.style,'solid');assert(!/transparent|rgba\([^)]*, 0\)/.test(line.color));}};
+ const checkWidth=async(maxRem,name)=>{
+  const geometry=await active().locator('.modal').evaluate(modal=>{
+   const {left,right,width}=modal.getBoundingClientRect();
+   const rootFont=Number.parseFloat(getComputedStyle(document.documentElement).fontSize);
+   return {left,right,width,viewport:window.innerWidth,rem:rootFont*modal.currentCSSZoom};
+  });
+  const {left,right,width,viewport,rem}=geometry;
+  assert(Math.abs(left-(viewport-right))<2,name+' is horizontally centered');
+  const cap=maxRem*rem;
+  assert(width<=Math.min(viewport,cap)+1,name+' stays within its cap: '+JSON.stringify(geometry));
+  assert(width>=Math.min(viewport-32,cap)-1,name+' uses the available space inside the viewport gutters');
+ };
+ const capture=async(name)=>{
+  if(!process.env.PLAYROOM_CAPTURE_DIR)return;
+  fs.mkdirSync(process.env.PLAYROOM_CAPTURE_DIR,{recursive:true});
+  await page.screenshot({path:path.join(process.env.PLAYROOM_CAPTURE_DIR,name+'.png')});
+ };
  const back=()=>active().locator('.modal-head [data-command=close-modal]').first().click();
+ const checkWelcomeSpacing=async()=>{
+  await active().locator('#profile-form [data-avatar-picker]').focus();
+  const geometry=await active().locator('.welcome-modal').evaluate(modal=>{
+   const head=modal.querySelector(':scope>.modal-head'),heading=head.querySelector('h2'),title=heading.getBoundingClientRect(),header=head.getBoundingClientRect();
+   const footer=modal.querySelector(':scope>[data-fixed-footer]'),play=footer.querySelector('button[type=submit]'),login=footer.querySelector('[data-account-open]');
+   const playBox=play.getBoundingClientRect(),loginBox=login.getBoundingClientRect();
+   const body=modal.querySelector(':scope>.modal-body'),viewport=window.visualViewport;
+   const avatar=body.querySelector('[data-avatar-picker]'),style=getComputedStyle(avatar),bodyBox=body.getBoundingClientRect(),avatarBox=avatar.getBoundingClientRect();
+   const ring=(parseFloat(style.outlineWidth)+parseFloat(style.outlineOffset))*avatar.currentCSSZoom;
+   return {top:(title.top-header.top)/head.currentCSSZoom,bottom:(header.bottom-title.bottom)/head.currentCSSZoom,
+    safeBottom:viewport.offsetTop+viewport.height-Math.max(playBox.bottom,loginBox.bottom),form:play.form?.id,
+    oneRow:Math.abs(playBox.top-loginBox.top)<1&&loginBox.right<playBox.left,
+    labels:[login.textContent.trim(),play.textContent.trim()],icons:[login,play].every(button=>button.querySelector('svg')),
+    title:heading.textContent,headerIcon:head.querySelector('[data-ui-icon]')?.dataset.uiIcon,
+    typography:[getComputedStyle(heading).fontSize,getComputedStyle(heading).fontWeight],
+    avatarRing:style.outlineStyle==='solid'&&ring>0&&avatarBox.left-bodyBox.left>=ring&&bodyBox.right-avatarBox.right>=ring,
+    scrolls:body.scrollHeight>body.clientHeight,contentBottom:body.getBoundingClientRect().bottom,footerTop:footer.getBoundingClientRect().top};
+  });
+  assert(geometry.top>=11.5&&geometry.bottom>=11.5,'welcome title has clearance above and below');
+  assert(geometry.safeBottom>=11.5,'the full start button fits above the visible bottom edge');
+  assert(geometry.contentBottom<=geometry.footerTop,'the start actions sit outside the scrolling form');
+  assert.equal(geometry.form,'profile-form','the pinned button still submits the welcome form');
+  assert(geometry.oneRow&&geometry.icons,'both actions have icons and share one row');
+  assert.deepEqual(geometry.labels,['Войти','Играть']);
+  assert.equal(geometry.title,'Добро пожаловать!');
+  assert.equal(geometry.headerIcon,'app');
+  assert(geometry.avatarRing,'the focused avatar outline fits inside the form clip box');
+  return geometry;
+ };
  try{
   await page.goto(process.env.PLAYROOM_SCREEN_CHROME_URL||server.url);await TestUI.ready(page);if(process.env.PLAYROOM_SCREEN_CHROME_VERSION)assert.equal(await page.evaluate(()=>PlayroomAppVersion),process.env.PLAYROOM_SCREEN_CHROME_VERSION);
-  for(const viewport of [{width:390,height:844},{width:740,height:390}]){
+  await active().locator('#profile-form').waitFor();
+  await check();await checkWidth(32,'Desktop welcome');const {typography}=await checkWelcomeSpacing();await capture('welcome-1280');
+  await page.setViewportSize({width:390,height:844});
+  await checkWidth(32,'Phone welcome');await checkWelcomeSpacing();await capture('welcome-390');
+  await page.setViewportSize({width:740,height:390});
+  await checkWidth(32,'Short landscape welcome');assert((await checkWelcomeSpacing()).scrolls);await capture('welcome-740');
+  await active().locator('[name=playerName]').fill('Тестовый игрок');
+  await active().locator('[data-profile-play-label]').click();
+  for(const viewport of [{width:390,height:844},{width:740,height:390},{width:1280,height:854},{width:1920,height:1080}]){
    await page.setViewportSize(viewport);await page.locator('[data-hub-page=profile]').click();
    for(const selector of ['[data-profile-account]','[data-command=settings]','[data-appearance-open]','[data-cloud-data-open]','[data-command=packs]','[data-command=show-updates]']){
     await page.locator('#hub-profile-page '+selector).click();await check();
-    if(selector==='[data-profile-account]'){await active().locator('[data-command=profile-edit]').click();await check();if(process.env.PLAYROOM_CAPTURE_DIR){fs.mkdirSync(process.env.PLAYROOM_CAPTURE_DIR,{recursive:true});await page.screenshot({path:path.join(process.env.PLAYROOM_CAPTURE_DIR,'panel-header-'+viewport.width+'.png')});}await back();await check();}
+    if(selector==='[data-profile-account]'){
+     await checkWidth(36,'Account');await capture('account-'+viewport.width);
+     await active().locator('[data-command=profile-edit]').click();await check();
+     const panelTypography=await active().locator('.modal-head h2').evaluate(heading=>[getComputedStyle(heading).fontSize,getComputedStyle(heading).fontWeight]);
+     assert.deepEqual(panelTypography,typography,'welcome and profile use the same panel typography');
+     await checkWidth(36,'Profile editor');await capture('panel-header-'+viewport.width);
+     await back();await check();
+    }else{
+     await checkWidth(48,selector);
+     if(selector==='[data-command=packs]'){
+      const names=await active().locator('[data-installed-pack] .packs-v021-summary strong').allTextContents();
+      assert(names.includes('Пексесо'),'installed SDK manifests render localized names');
+      assert(!names.includes('[object Object]'),'catalog does not render localization references');
+      await capture('packs-'+viewport.width);
+     }
+    }
     await back();
    }
    await page.locator('[data-hub-page=games]').click();

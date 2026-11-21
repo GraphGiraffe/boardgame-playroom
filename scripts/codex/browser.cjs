@@ -2,7 +2,7 @@
 // Shared browser discovery for existing tests and Cloud setup; no app or pack imports.
 const fs = require('node:fs');
 const path = require('node:path');
-const {chromium: playwrightChromium} = require(process.env.PLAYWRIGHT_MODULE || 'playwright-core');
+const {chromium: playwrightChromium, webkit, devices} = require(process.env.PLAYWRIGHT_MODULE || 'playwright-core');
 function executable(candidate) {
   if (!candidate) return null;
   const paths = candidate.includes('/') || candidate.includes('\\')
@@ -71,7 +71,17 @@ function executablePath() {
   const error = Error('No Chromium browser found. Run bash scripts/codex/setup.sh, or set CHROME_BIN to an installed Chrome/Chromium executable.');
   error.code = 'BROWSER_MISSING'; throw error;
 }
-module.exports = {chromium, executablePath};
+function launchTestBrowser(engine) {
+  if (engine === 'chromium') return chromium.launch({headless: true, executablePath: executablePath()});
+  if (engine === 'webkit') return webkit.launch({headless: true});
+  throw Error('Choose chromium or webkit');
+}
+function phoneProfile(engine) {
+  const descriptor = engine === 'webkit' ? devices['iPhone 15'] : devices['Pixel 7'];
+  const {defaultBrowserType, ...context} = descriptor;
+  return context;
+}
+module.exports = {chromium, executablePath, launchTestBrowser, phoneProfile, TEST_PROFILE_SCRIPT};
 if (require.main === module) {
   (async () => {
     if (process.argv.length > 3 || (process.argv[2] && process.argv[2] !== '--check')) throw Error('Usage: node scripts/codex/browser.cjs [--check]');

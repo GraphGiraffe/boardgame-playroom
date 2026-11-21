@@ -6,6 +6,25 @@ const {loadProject}=require('../sdk/project.cjs');
 const {checkSource}=require('../sdk/check.cjs');
 const {privacy}=require('../sdk/verify.cjs');
 const {fixture}=require('./sdk-fixture.cjs');
+test('SDK reuses bridge checks only for owned snapshots at a valid request depth',async t=>{
+ const {createNodeHost}=require('../sdk/node-host.cjs');
+ const {parseSnapshot}=require('../core/model-values.js');
+ const host=await createNodeHost(),guest=host.createRules(loadProject(fixture(t)));
+ const start=options=>guest.model.start({playerCount:2,firstPlayer:0,rng:1,options});
+ const shared=parseSnapshot('{"values":[1,2]}');
+ const original=Object.entries;let traversals=0;
+ try{
+  Object.entries=function(value){if(value===shared)traversals++;return original(value);};
+  start({first:shared});start({second:shared});
+  assert.equal(traversals,1);
+  const nested=Array.from({length:78}).reduce(value=>[value],shared);
+  assert.throws(()=>start(nested),{code:'SDK_DATA_DEPTH'});
+  assert.throws(()=>start(parseSnapshot('{"constructor":"denied"}')),{code:'SDK_DATA_KEY_DENIED'});
+  const shell=Object.freeze({child:{value:1}});
+  start(shell);shell.child.value=()=>1;
+  assert.throws(()=>start(shell),{code:'SDK_JSON_INVALID'});
+ }finally{Object.entries=original;guest.close();}
+});
 test('SDK denies network, Node, DOM, storage and ambient randomness even if the guest catches the error',async t=>{
  for(const expression of ['fetch("https://example.invalid")','process.env','document.cookie','localStorage.getItem("x")','Math.random()','Date.now()','require("node:fs")']){
   const root=fixture(t,{start:`try{${expression}}catch{}`}),s=await StudioSession.open(root);t.after(()=>s.close());
@@ -23,6 +42,132 @@ test('SDK isolates cached presentation data between viewers and rendering calls'
  assert.equal((await session.view(0)).scene.label,'owner-zero');
  const other=await session.view(1);assert.equal(other.projection.data.label,'owner-one');assert.equal(other.scene.label,'owner-one');
  assert.equal((await session.view(0)).scene.label,'owner-zero');
+});
+test('installed and Studio SDK frames isolate event descriptions from scene hooks and other events',async t=>{
+ const root=fixture(t),file=path.join(root,'presentation/scene.js');
+ fs.appendFileSync(path.join(root,'domain/game.js'),`
+ PlayroomPackDefinition.reduce=p=>({position:p,events:['probe.step','probe.other'].map(type=>({
+  type,actor:0,params:{},visibility:{kind:'public'}
+ }))});
+ `);
+ fs.appendFileSync(file,`
+ let descriptions=0,rendered=false;
+ const scene=PlayroomPackPresentation.scene;
+ PlayroomPackPresentation.scene=projection=>{rendered=true;return scene(projection);};
+ PlayroomPackPresentation.event=({type,params})=>{
+  if(rendered||descriptions++)return {message:'unexpected context'};
+  if(type==='probe.cached')return {message:{key:'probe.cached',params:{count:params.count}},
+   reveal:{kind:'dice',dice:[{value:params.count}]}};
+  return {message:type};
+ };
+ PlayroomPackPresentation.eventScenes=projection=>projection.events.map(event=>({eventId:event.id,
+  scene:{...PlayroomPackPresentation.scene(projection),label:String(descriptions)}}));
+ globalThis.PlayroomPackTutorial=()=>()=>({steps:[{id:'probe',text:'Lesson',selector:'[data-view-key="hint"]'}]});
+ `);
+ const project=loadProject(root),host=await require('../sdk/node-host.cjs').createNodeHost(),guest=host.createRules(project);
+ t.after(()=>guest.close());
+ const position=guest.model.create({playerCount:2,firstPlayer:0,rng:1});
+ const event={id:1,revision:0,type:'probe.step',actor:0,params:{},visibility:{kind:'public'}};
+ const projection=guest.model.project(position,0,[event]);
+ const installed=host.render(project,projection,{installed:true}),studio=host.render(project,projection);
+ assert.deepEqual(installed.actions,studio.actions);
+ assert.equal(Object.hasOwn(installed,'events'),false);
+ assert.equal(installed.eventScenes[0].scene.label,'0');
+ assert.equal(studio.eventScenes[0].scene.label,'0');
+ assert.deepEqual(studio.events,[{message:'probe.step'}]);
+ const live=host.render(project,projection,{installed:true,tutorial:false});
+ assert.deepEqual(live.scene,installed.scene);
+ assert.deepEqual(live.actions,installed.actions);
+ assert.deepEqual(live.eventScenes,installed.eventScenes);
+ assert.equal(Object.hasOwn(live,'support'),false);
+ assert.equal(studio.support.tutorial.steps[0].id,'probe');
+ assert.equal(host.present(project,'tutorial',projection,live.scene,{}).steps[0].id,'probe');
+ assert.deepEqual(host.present(project,'event',projection.events[0]),{message:'probe.step'});
+ const present=host.createEventPresenter(project,true);
+ const fact={...event,type:'probe.cached',params:{count:4}};
+ const cached=present(fact);
+ assert.equal(present({...fact,id:2,revision:1}),cached,'matching authorized facts reuse the decoded description');
+ assert(Object.isFrozen(cached.reveal.dice[0]));
+ const [localized]=host.formatEvents(present,[fact]);
+ assert.equal(localized.reveal,cached.reveal,'participant binding keeps the decoded reveal');
+ assert.deepEqual(localized.message.params,{player:{kind:'player-reference',index:0},count:4});
+ assert.deepEqual(cached.message.params,{count:4},'binding a participant never modifies the cache entry');
+ assert.equal(present({...fact,params:{count:6}}).reveal.dice[0].value,6);
+ const compact=host.render(project,projection,{sharedCatalog:true});
+ assert.deepEqual(compact.support,{tutorial:studio.support.tutorial});
+ assert.deepEqual(compact.eventScenes,studio.eventScenes);
+ const session=await StudioSession.open(root);t.after(()=>session.close());
+ await session.start();await session.apply(0,{type:'step'});
+ const frame=await session.view(0);
+ assert.deepEqual(frame.events.map(value=>[value.id,value.message,value.scene.label]),[
+  [1,'probe.step','0'],[2,'probe.other','0'],
+ ]);
+ assert.deepEqual((await session.view(-1,1)).events,frame.events);
+});
+test('compact Studio support keeps graphics which depend on the current authorized view',async t=>{
+ const root=fixture(t),file=path.join(root,'presentation/scene.js');
+ fs.appendFileSync(file,`
+ const scene=PlayroomPackPresentation.scene;
+ let color;
+ PlayroomPackPresentation.scene=projection=>{color=projection.viewer===0?'red':'blue';return scene(projection);};
+ globalThis.PlayroomPackRuleIllustrations={graphics:()=>({sample:'<svg><circle fill="'+color+'"/></svg>'})};
+ `);
+ const session=await StudioSession.open(root);t.after(()=>session.close());await session.start();
+ for(const viewer of [-1,0,1]){
+  const full=await session.view(viewer),compact=await session.view(viewer,null,{sharedCatalog:true});
+  const {graphics}=full.support.catalog;
+  assert.equal(graphics.sample.children[0].attrs.fill,viewer===0?'red':'blue');
+  assert.deepEqual(compact.support,{catalog:{graphics},tutorial:full.support.tutorial});
+  assert.deepEqual(compact.projection,full.projection);
+ }
+});
+test('bound SDK projects encode registration data once and each guest parses its own copy',async t=>{
+ const root=fixture(t),file=path.join(root,'presentation/scene.js');
+ fs.appendFileSync(file,`
+ PlayroomPackPresentation.event=()=>{
+  const catalog=PlayroomPackResources.locales.ru,message=catalog.sample;
+  catalog.sample='guest mutation';
+  return {message};
+ };`);
+ const host=await require('../sdk/node-host.cjs').createNodeHost(),project=loadProject(root);
+ const event={type:'probe.step',actor:0,params:{}};
+ let encodes=0;
+ Object.defineProperty(project.catalogs,'ru',{enumerable:true,get(){encodes++;return {sample:'installed'};}});
+ const guest=host.createRules(project,{cacheRegistration:true});
+ t.after(()=>guest.close());
+ for(let i=0;i<3;i++)assert.deepEqual(host.present(project,'event',event),{message:'installed'});
+ assert.equal(encodes,1);
+ const replacement={...project,catalogs:{ru:{sample:'replacement'}}};
+ host.cacheProjectRegistration(replacement);
+ assert.deepEqual(host.present(replacement,'event',event),{message:'replacement'});
+ assert.deepEqual(host.present(project,'event',event),{message:'installed'});
+ assert.equal(encodes,1);
+ const direct={...project,catalogs:{ru:{sample:'editable'}}};
+ assert.deepEqual(host.present(direct,'event',event),{message:'editable'});
+ direct.catalogs.ru.sample='next edit';
+ assert.deepEqual(host.present(direct,'event',event),{message:'next edit'});
+});
+test('fact-only formatters receive the same authorized payload in Studio and the installed player',async t=>{
+ const root=fixture(t),file=path.join(root,'presentation/scene.js');
+ fs.appendFileSync(file,`
+ PlayroomPackPresentation.event=value=>({message:JSON.stringify(value)});
+ `);
+ const host=await require('../sdk/node-host.cjs').createNodeHost(),legacy=loadProject(root),guest=host.createRules(legacy);
+ t.after(()=>guest.close());
+ const position=guest.model.create({playerCount:2,firstPlayer:0,rng:1});
+ const fact={type:'probe.step',actor:0,params:{steps:2}};
+ const facts=[1,2].map(id=>({...fact,id,revision:id,visibility:{kind:'public'}}));
+ const projection=guest.model.project(position,0,facts);
+ assert.equal(JSON.parse(host.present(legacy,'event',projection.events[0]).message).id,1);
+ fs.appendFileSync(file,"PlayroomPackPresentation.metadata={...PlayroomPackPresentation.metadata,eventInputs:'facts'};");
+ const project=loadProject(root);
+ const studio=host.render(project,projection);
+ assert.equal(host.metadata(project).eventInputs,'facts');
+ for(const [index,event] of projection.events.entries()){
+  assert.deepEqual(JSON.parse(host.present(project,'event',event).message),fact);
+  assert.deepEqual(JSON.parse(studio.events[index].message),fact);
+  assert.equal(event.id,index+1);
+ }
 });
 test('SDK diagnostics redact guest exception metadata and dynamic missing-field values',async t=>{
  for(const start of ["const error=Error('PRIVATE_PAYLOAD_XYZ');error.resource='hidden-beta';error.stack=' at domain/hidden-beta.js:1:1';throw error;","try{SDK.read({},'hidden-beta')}catch{}"]) {

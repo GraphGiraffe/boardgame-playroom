@@ -31,7 +31,68 @@
   while(index+1<states.length&&botReady(states[index],states[index+1]))index++;
   return index;
  }
+ // Own the cursor timer separately from the plans playing each history step.
+ // A paused step keeps its promise and resumes without asking for a new frame.
+ class HistoryPlayback {
+  constructor({step,changed,error,clock}){this.step=step;this.changed=changed;this.error=error;this.clock=clock;this.run=null;}
+  get mode(){return this.run?this.run.paused?'pause':'play':'still';}
+  start(delay){
+   this.stop();
+   const run={paused:false,first:true,remaining:delay,timer:null,stepping:false,waiting:null,wake:null};
+   this.run=run;
+   this.changed('play');
+   this.arm(run);
+  }
+  pause(){
+   const run=this.run;if(!run||run.paused)return;
+   run.paused=true;
+   if(run.timer!==null){
+    this.clock.clearTimeout(run.timer);run.timer=null;
+    run.remaining=Math.max(0,run.until-this.clock.now());
+   }
+   this.changed('pause');
+  }
+  resume(){
+   const run=this.run;if(!run?.paused)return;
+   run.paused=false;
+   this.changed('play');
+   run.wake?.(true);run.wake=null;run.waiting=null;
+   if(!run.stepping)this.arm(run);
+  }
+  stop(){
+   const run=this.run;if(!run)return;
+   this.run=null;
+   if(run.timer!==null)this.clock.clearTimeout(run.timer);
+   run.wake?.(false);
+   this.changed('still');
+  }
+  arm(run){
+   run.until=this.clock.now()+run.remaining;
+   run.timer=this.clock.setTimeout(()=>this.advance(run),run.remaining);
+  }
+  ready(run){
+   if(this.run!==run)return false;
+   if(!run.paused)return true;
+   return run.waiting??=new Promise(resolve=>{run.wake=resolve;});
+  }
+  async advance(run){
+   if(this.run!==run||run.paused)return;
+   run.timer=null;run.stepping=true;
+   try{
+    const delay=await this.step(()=>this.ready(run),run.first);
+    if(this.run!==run)return;
+    run.first=false;
+    if(delay===null){this.stop();return;}
+    run.stepping=false;run.remaining=delay;
+    if(!run.paused)this.arm(run);
+   }catch(error){
+    if(this.run!==run)return;
+    this.stop();this.error(error);
+   }
+  }
+ }
  class HistoryController {
+  static Playback=HistoryPlayback;
   static readyBatchEnd=readyBatchEnd;
   static boundaryIndex=boundaryIndex;
   static planningRevision=planningRevision;
@@ -45,8 +106,9 @@
   backfill(from,{origin='backfill'}={}){if(origin!=='backfill'||!revision(from)||from<1||from>this.count)return false;this.boundary=from;this.visited=false;this.changed();return true;}
   enter(index=this.count){this.open=true;return this.seek(index);}
   select(index,frame){if(!this.open)return false;const value=Math.max(this.minimum,Math.min(this.count,index));if(!revision(value)||!same(frame,this.live)||frame.revision!==value)throw Error('HISTORY_FRAME_INVALID');this.requested=null;this.index=value;this.frame=frame;this.progress.reviewedRevision=value;if(this.boundary!==null&&value<this.boundary)this.visited=true;if(this.visited&&value>=this.count){this.boundary=null;this.visited=false;}this.reviewed(value,frame);this.changed();return true;}
-  async seek(index,{skip=null}={}){if(!this.open||!this.live)return null;let value=Math.max(this.minimum,Math.min(this.count,index));if(!revision(value))throw Error('HISTORY_REVISION_INVALID');const ticket=++this.ticket;this.requested=value;this.changed();try{let frame=await this.read(value);if(ticket!==this.ticket||!this.open)return null;
+  async seek(index,{skip=null,ready=null}={}){if(!this.open||!this.live)return null;let value=Math.max(this.minimum,Math.min(this.count,index));if(!revision(value))throw Error('HISTORY_REVISION_INVALID');const ticket=++this.ticket;this.requested=value;this.changed();try{let frame=await this.read(value);if(ticket!==this.ticket||!this.open)return null;
    if(skip&&value>this.minimum&&value<this.count){let previous=await this.read(value-1);while(value<this.count){if(ticket!==this.ticket||!this.open)return null;if(!same(frame,this.live)||frame.revision!==value||!same(previous,frame)||previous.revision!==value-1)throw Error('HISTORY_FRAME_INVALID');if(!skip(previous,frame))break;previous=frame;frame=await this.read(++value);}}
+   if(ready&&!await ready()){if(ticket===this.ticket){this.requested=null;this.changed();}return null;}
    if(ticket!==this.ticket||!this.open)return null;this.select(value,frame);return frame;}catch(error){if(ticket!==this.ticket||!this.open)return null;this.requested=null;this.changed();throw error;}}
   invalidate(){this.ticket++;this.requested=null;}
   close(){this.invalidate();this.open=false;this.index=null;this.frame=null;this.changed();}

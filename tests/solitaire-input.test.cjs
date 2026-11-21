@@ -86,14 +86,27 @@ test('screen:phone native horizontal scrolling reveals a guided target without d
   await page.evaluate(async()=>{const b=PlayroomAppBridge,s=new TabletopSession(TabletopCore,'spider',{seed:17,mode:'solo',undo:'history',players:[{name:'Иван'}]});await b.saveLibrary.activateAsync(s,'native-scroll-position');b.showSessions();});
   await page.locator('.saved-game[data-session-id="native-scroll-position"][data-saved-actions-toggle]').click();await page.locator('#modal-root>[data-surface-state=active] [data-resume-id="native-scroll-position"]').click();await page.locator('.solitaire-board').waitFor();
   const choice=await page.evaluate(()=>{const s=PlayroomAppBridge.saveLibrary.current().session.current;return TabletopCore.legalActions(s,0).find(a=>a.type==='move'&&a.source==='tableau');});assert(choice);
-  const source=page.locator('.solitaire-card[data-select='+JSON.stringify(choice.card)+']');await source.focus();await page.keyboard.press('Enter');await page.locator('.first-turn-guide.is-scroll-cue:not([hidden]) .guide-caption').waitFor();
+  const source=page.locator('.solitaire-card[data-select='+JSON.stringify(choice.card)+'],.solitaire-card[data-entity='+JSON.stringify('card-'+choice.card)+'][data-sdk-guide-step~="card"]');
+  await source.focus();await page.keyboard.press('Enter');
+  try{await page.locator('.first-turn-guide.is-scroll-cue:not([hidden]) .guide-caption').waitFor();}
+  catch(error){
+   const view=await page.evaluate(()=>{const scroll=document.querySelector('.solitaire-scroll');return {width:scroll.clientWidth,extent:scroll.scrollWidth,guide:document.querySelector('.first-turn-guide:not([hidden])')?.textContent,targets:[...document.querySelectorAll('[data-sdk-guide-step~="target"]')].map(el=>({x:el.getBoundingClientRect().x,command:el._command}))};});
+   throw Error(`Scrollable Spider lesson did not point to the next target: ${JSON.stringify(view)}`,{cause:error});
+  }
   const scroll=page.locator('.solitaire-scroll'),box=await scroll.boundingBox(),before=await page.evaluate(()=>({left:document.querySelector('.solitaire-scroll').scrollLeft,move:PlayroomAppBridge.saveLibrary.current().session.current.move,stock:PlayroomAppBridge.saveLibrary.current().session.current.data.stock.length}));
   const client=await context.newCDPSession(page),y=box.y+box.height-40,start=box.x+box.width-30,end=box.x+30;
   await client.send('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[{x:start,y}]});for(const t of [.2,.4,.6,.8,1])await client.send('Input.dispatchTouchEvent',{type:'touchMove',touchPoints:[{x:start+(end-start)*t,y}]});await client.send('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]});
   await page.waitForFunction(left=>document.querySelector('.solitaire-scroll').scrollLeft>left+20,before.left);
   await page.locator('.first-turn-guide:not(.is-scroll-cue):not([hidden]) .guide-caption').filter({hasText:'Выберите место для переноса карты.'}).waitFor();
   const after=await page.evaluate(()=>({left:document.querySelector('.solitaire-scroll').scrollLeft,move:PlayroomAppBridge.saveLibrary.current().session.current.move,stock:PlayroomAppBridge.saveLibrary.current().session.current.data.stock.length,targetLearned:PlayroomFirstTurnGuide.settings('spider').mastered.target,ghosts:document.querySelectorAll('.playroom-drag-ghost').length}));assert.equal(after.move,before.move);assert.equal(after.stock,before.stock);assert.equal(after.targetLearned,undefined);assert.equal(after.ghosts,0);
-  const destination=page.locator('[data-drop-piece='+JSON.stringify(choice.card)+'][data-action]').first(),target=await destination.boundingBox();assert(target.x>=0&&target.x+target.width<=390);await page.touchscreen.tap(target.x+target.width/2,target.y+target.height/2);await page.waitForFunction(move=>PlayroomAppBridge.saveLibrary.current().session.current.move===move+1,before.move);assert.equal(await page.evaluate(()=>PlayroomFirstTurnGuide.settings('spider').mastered.target),1);assert.deepEqual(errors,[]);assert.equal(net.nativeSupabaseRequests,0);
+  const target=await page.evaluate(card=>{
+   const guide=document.querySelector('.first-turn-guide:not([hidden])').getBoundingClientRect();
+   const hit=document.elementFromPoint(guide.x,guide.y)?.closest('[data-action],[data-sdk-guide-step~="target"]');
+   if(hit&&String(hit._command?.card??hit.dataset.dropPiece)===String(card))return {x:guide.x,y:guide.y};
+   return null;
+  },choice.card);
+  assert(target,'the cursor points to an actual legal destination for the selected card');
+  await page.touchscreen.tap(target.x,target.y);await page.waitForFunction(move=>PlayroomAppBridge.saveLibrary.current().session.current.move===move+1,before.move);assert.equal(await page.evaluate(()=>PlayroomFirstTurnGuide.settings('spider').mastered.target),1);assert.deepEqual(errors,[]);assert.equal(net.nativeSupabaseRequests,0);
   if(process.env.PLAYROOM_SOLITAIRE_OUT_DIR){const out=process.env.PLAYROOM_SOLITAIRE_OUT_DIR;fs.mkdirSync(out,{recursive:true});fs.writeFileSync(path.join(out,'native-guided-scroll.json'),JSON.stringify({engine:browser.browserType().name(),version:browser.version(),artifact,before,after,target,errors,nativeSupabaseRequests:net.nativeSupabaseRequests},null,2));await page.screenshot({path:path.join(out,'native-guided-scroll.png')});}
  }finally{if(browser)await browser.close();await server.close();}
 });

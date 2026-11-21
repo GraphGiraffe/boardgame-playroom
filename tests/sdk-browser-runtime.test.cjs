@@ -8,7 +8,7 @@ const {chromium,executablePath}=require('../scripts/codex/browser.cjs');
 let server,browser,base;
 before(async()=>{
  const built=await buildSandbox();
- server=http.createServer((request,response)=>{const name=request.url?.split('?')[0];if(name==='/packs.js'){response.setHeader('content-type','application/javascript');response.end(fs.readFileSync(path.join(__dirname,'../core/packs.js')));return;}if(name==='/'){response.setHeader('content-type','text/html');response.end('<!doctype html><meta charset="utf-8"><script src="/sandbox.js"></script>');return;}if(!['/sandbox.js','/quickjs.wasm'].includes(name)){response.writeHead(404).end();return;}response.setHeader('content-type',name.endsWith('.wasm')?'application/wasm':'application/javascript');response.end(fs.readFileSync(path.join(built.directory,name.slice(1))));});
+ server=http.createServer((request,response)=>{const name=request.url?.split('?')[0];if(name==='/scene-images.js'){response.setHeader('content-type','application/javascript');response.end(fs.readFileSync(path.join(__dirname,'../platform/web/scene-images.js')));return;}if(name==='/packs.js'){response.setHeader('content-type','application/javascript');response.end(fs.readFileSync(path.join(__dirname,'../core/packs.js')));return;}if(name==='/'){response.setHeader('content-type','text/html');response.end('<!doctype html><meta charset="utf-8"><script src="/sandbox.js"></script><script src="/scene-images.js"></script>');return;}if(!['/sandbox.js','/quickjs.wasm'].includes(name)){response.writeHead(404).end();return;}response.setHeader('content-type',name.endsWith('.wasm')?'application/wasm':'application/javascript');response.end(fs.readFileSync(path.join(built.directory,name.slice(1))));});
  await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));base='http://127.0.0.1:'+server.address().port;
  browser=await chromium.launch({headless:true,executablePath:executablePath()});
 });
@@ -27,8 +27,24 @@ test('browser sandbox keeps caught capability errors outside guest control and r
  const result=await page.evaluate(project=>{const guest=PlayroomSandbox.createRules(project);try{guest.model.start({playerCount:2,firstPlayer:0,rng:1});}catch(error){return error.diagnostic;}finally{guest.close();}},hostile);assert.equal(result.code,'SDK_EXECUTION_FAILED');assert(!JSON.stringify(result).includes('SECRET_BROWSER_PAYLOAD'));
 });
 test('browser sandbox creates a fresh presentation realm for every viewer and denies authority access',async t=>{
- const page=await pageFor(t),root=fixture(t,{project:"({label:viewer===0?'private-zero':'private-one'})",render:'globalThis.cachedLabel ||= projection.data.label'}),file=path.join(root,'presentation/scene.js');fs.writeFileSync(file,fs.readFileSync(file,'utf8').replace('players:[0,1]','label:globalThis.cachedLabel,players:[0,1]'));
- const labels=await page.evaluate(project=>{const guest=PlayroomSandbox.createRules(project);try{const start=guest.model.start({playerCount:2,firstPlayer:0,rng:1});return [0,1,0].map(viewer=>PlayroomSandbox.render(project,guest.model.project(start.position,viewer,[])).scene.label);}finally{guest.close();}},payload(root));assert.deepEqual(labels,['private-zero','private-one','private-zero']);
+ const page=await pageFor(t),root=fixture(t,{project:"({label:viewer===0?'private-zero':'private-one'})",render:`if(typeof PlayroomModelRuntime!=='undefined'||typeof PlayroomRandom!=='undefined')throw Error('AUTHORITY_MODULE_EXPOSED');globalThis.cachedLabel ||= projection.data.label`}),file=path.join(root,'presentation/scene.js');fs.writeFileSync(file,fs.readFileSync(file,'utf8').replace('players:[0,1]','label:globalThis.cachedLabel,players:[0,1]'));
+ const sizing=await page.evaluate(project=>{
+  const original=TextEncoder.prototype.encode,source=project.presentation[0],before=source.source;
+  let encodes=0,guest;
+  TextEncoder.prototype.encode=function(text){
+   if(text===source.source)encodes++;
+   return original.call(this,text);
+  };
+  try{
+   guest=PlayroomSandbox.createRules(project);
+   const start=guest.model.start({playerCount:2,firstPlayer:0,rng:1});
+   const render=viewer=>PlayroomSandbox.render(project,guest.model.project(start.position,viewer,[])).scene.label;
+   const labels=[0,1,0].map(render),firstEncodes=encodes;
+   source.source=before.replace('label:globalThis.cachedLabel','label:"updated"');
+   return {labels,firstEncodes,updated:render(1),totalEncodes:encodes};
+  }finally{guest?.close();TextEncoder.prototype.encode=original;}
+ },payload(root));
+ assert.deepEqual(sizing,{labels:['private-zero','private-one','private-zero'],firstEncodes:1,updated:'updated',totalEncodes:2});
  const isolated=payload(fixture(t,{render:"if(typeof PlayroomPackDefinition!=='undefined'||typeof __definition!=='undefined')throw Error('AUTHORITY_LEAK');if(Object.hasOwn(projection.data,'secret'))throw Error('AUTHORITY_LEAK');"}));
  assert.equal(await page.evaluate(project=>{const guest=PlayroomSandbox.createRules(project);try{const start=guest.model.start({playerCount:2,firstPlayer:0,rng:1});return PlayroomSandbox.render(project,guest.model.project(start.position,0,[])).scene.id;}finally{guest.close();}},isolated),'probe');
 });
@@ -42,7 +58,7 @@ test('browser sandbox interrupts loops and allocation floods and remains usable'
 });
 test('browser sandbox runs normal pilots and bot contexts through the canonical guest model',{timeout:45000},async t=>{
  const page=await pageFor(t);
- for(const id of ['tictactoe','gofish','yatzy']){
+ for(const id of ['tictactoe','gofish','dice-poker']){
   const project=payload(path.resolve(__dirname,'../../playroom-paks/packs',id));
   const result=await page.evaluate(project=>{const guest=PlayroomSandbox.createRules(project);try{const start=guest.model.start({playerCount:2,firstPlayer:0,preset:'classic',rng:1}),projection=guest.model.project(start.position,0,[]),view=PlayroomSandbox.render(project,projection),bot=guest.model.botAction(start.position,start.position.turn,{enabled:false});return {id:guest.model.id,scene:view.scene.id,players:view.scene.players.length,bot};}finally{guest.close();}},project);
   assert.equal(result.id,id);assert.equal(result.players,2);assert(result.scene);assert(result.bot&&typeof result.bot.type==='string');
@@ -50,8 +66,12 @@ test('browser sandbox runs normal pilots and bot contexts through the canonical 
 });
 test('browser sandbox rejects non JSON bridge arguments instead of dropping host functions',async t=>{
  const page=await pageFor(t);
- const codes=await page.evaluate(project=>{const guest=PlayroomSandbox.createRules(project);try{const loop={};loop.self=loop;return [()=>guest.definition.create({callback:()=>1}),()=>guest.model.start({playerCount:2,firstPlayer:0,rng:1,callback:()=>1}),()=>guest.model.start(loop),()=>guest.model.start({value:1n})].map(run=>{try{run();return null;}catch(error){return error.code;}});}finally{guest.close();}},payload(fixture(t)));
- assert.deepEqual(codes,['SDK_JSON_INVALID','SDK_JSON_INVALID','SDK_JSON_INVALID','SDK_JSON_INVALID']);
+ const codes=await page.evaluate(project=>{const guest=PlayroomSandbox.createRules(project);try{
+  const loop={};loop.self=loop;
+  const position=guest.model.create({playerCount:2,firstPlayer:0,rng:1}),serialized=Object.defineProperty({},'toJSON',{value:()=>({constructor:'blocked'})});
+  return [()=>guest.definition.create({callback:()=>1}),()=>guest.model.start({playerCount:2,firstPlayer:0,rng:1,callback:()=>1}),()=>guest.model.start(loop),()=>guest.model.start({value:1n}),()=>guest.model.botAction(position,0,serialized)].map(run=>{try{run();return null;}catch(error){return error.code;}});
+ }finally{guest.close();}},payload(fixture(t)));
+ assert.deepEqual(codes,['SDK_JSON_INVALID','SDK_JSON_INVALID','SDK_JSON_INVALID','SDK_JSON_INVALID','SDK_DATA_KEY_DENIED']);
 });
 
 test('browser sandbox isolates bot hooks from authority caches and rejects direct hook bypass',async t=>{
@@ -89,7 +109,9 @@ test('portable browser authored bots validate structured bids before authority a
 });
 
 test('normal browser pack preparation rejects untrusted media bytes before guest Blob or registry creation',{timeout:45000},async t=>{
- const page=await pageFor(t),requests=[];page.on('request',r=>requests.push(r.url()));await page.addScriptTag({url:base+'/packs.js'});
+ const page=await pageFor(t),requests=[];page.on('request',r=>requests.push(r.url()));
+ for(const file of ['common-format.js','localization.js'])await page.addScriptTag({path:path.resolve(__dirname,'../presentation',file)});
+ await page.addScriptTag({url:base+'/packs.js'});
  const fixtures=require('./sdk-media-fixtures.cjs'),valid=fixtures.valid();const accepted=await page.evaluate(rows=>PlayroomSandbox.validateMedia(rows),valid);assert.equal(accepted.files.length,valid.length);assert.deepEqual(accepted.files.map(f=>f.sha256),valid.map(r=>r.sha256));
  for(const [name,rows,code]of fixtures.cases()){
   const bundle=fixtures.bundle(rows);assert(Buffer.byteLength(JSON.stringify(bundle))<4_000_000,name+' stays below outer pack limit');

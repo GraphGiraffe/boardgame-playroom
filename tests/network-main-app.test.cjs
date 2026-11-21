@@ -1,7 +1,7 @@
 const TestUI=require('./browser-origin.cjs');
 'use strict';
 const {test}=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path'),http=require('node:http');
-const {chromium,executablePath}=require('../scripts/codex/browser.cjs');
+const {chromium,executablePath,launchTestBrowser,phoneProfile}=require('../scripts/codex/browser.cjs');
 const root=process.env.PLAYROOM_NETWORK_FIXTURE||path.resolve(__dirname,'..');
 const installed=fs.readdirSync(root).find(name=>/^installed-packs(?:\.[a-f0-9]+)?\.js$/.test(name));
 const hasUno=!!installed&&/"id"\s*:\s*"uno"/.test(fs.readFileSync(path.join(root,installed),'utf8'));
@@ -21,6 +21,517 @@ async function closeSettings(page){await active(page).locator('.modal-head [data
 async function ownProfile(page,name){const id=await page.evaluate(()=>PlayroomNetworkLibrary.inviteContext().participantId);await active(page).locator('[data-room-person="'+id+'"]').click();await active(page).locator('[data-command=profile-edit]').click();if(name!==undefined){await page.locator('#local-profile-editor [name=nickname]').fill(name);await active(page).locator('[type=submit][form=local-profile-editor],#local-profile-editor [type=submit]').click();await page.locator('#local-profile-editor').waitFor({state:'detached'});await active(page).locator('.modal-head [data-command=close-modal]').click();}}
 async function savedAction(page,selector,id,status='active'){await page.locator('[data-hub-page=sessions]').click();await page.locator('[data-saved-status="'+status+'"]').click();await page.locator('.saved-game[data-network-session-id="'+id+'"]').click();await active(page).locator(selector).click();}
 async function gameAction(page,command){if(!await active(page).locator('.game-menu-panel').count())await page.locator('[data-game-menu]').click();await active(page).locator('[data-game-menu-action][data-command="'+command+'"]').click();}
+
+const invitationGuestEngine=process.env.PLAYROOM_TEST_BROWSER||'chromium';
+const invitationHostEngines=process.env.PLAYROOM_TEST_BROWSER?['chromium','webkit']:['chromium'];
+for(const hostEngine of invitationHostEngines)test('mobile invitation tolerates duplicate replies ('+hostEngine+' host, '+invitationGuestEngine+' guest)',{timeout:55000},async t=>{
+ const origin=await TestUI.serveBrowserFixture(root);
+ t.after(()=>origin.close());
+ const hostBrowser=await launchTestBrowser(hostEngine);
+ t.after(()=>hostBrowser.close());
+ const guestBrowser=hostEngine===invitationGuestEngine?hostBrowser:await launchTestBrowser(invitationGuestEngine);
+ if(guestBrowser!==hostBrowser)t.after(()=>guestBrowser.close());
+ t.diagnostic('RTC host '+hostBrowser.browserType().name()+' '+hostBrowser.version()+
+   '; guest '+guestBrowser.browserType().name()+' '+guestBrowser.version());
+ const artifact=process.env.PLAYROOM_TEST_ARTIFACT;
+ const html=artifact?fs.readFileSync(artifact):null;
+ const issues=[];
+ async function phone(browser,engine,name){
+  const options=phoneProfile(engine);
+  if(engine==='chromium')options.playroomProfile=false;
+  const context=await browser.newContext(options);
+  await context.route('**/*',route=>{
+   const url=new URL(route.request().url());
+   if(url.origin!==new URL(origin.url).origin)return route.abort();
+   if(html&&url.pathname==='/')return route.fulfill({contentType:'text/html',body:html});
+   return route.continue();
+  });
+  await context.addInitScript(()=>{
+   const nativeAnswer=RTCPeerConnection.prototype.setRemoteDescription;
+   const observations=window.invitationObservations={answers:[],toastErrors:[]};
+   RTCPeerConnection.prototype.setRemoteDescription=function(description){
+    if(description.type==='answer')observations.answers.push(this.signalingState);
+    return nativeAnswer.call(this,description);
+   };
+   document.addEventListener('DOMContentLoaded',()=>{
+    const toast=document.querySelector('#toast');
+    const noInvite=PlayroomMessages.text('ui.network-ui.f7eb06f83d1f');
+    if(toast)new MutationObserver(()=>{
+     if(/wrong state|setRemoteDescription/i.test(toast.textContent)||toast.textContent===noInvite)
+      observations.toastErrors.push(toast.textContent);
+    }).observe(toast,{subtree:true,childList:true,characterData:true});
+   },{once:true});
+  });
+  const page=await context.newPage();page._url=origin.url;page.setDefaultTimeout(12000);
+  page.on('pageerror',error=>issues.push(error.message));
+  await profile(page,name);
+  return page;
+ }
+ const host=await phone(hostBrowser,hostEngine,'Хост');
+ const guest=await phone(guestBrowser,invitationGuestEngine,'Гость');
+ await TestUI.openGame(host,'tictactoe','network');
+ await host.locator('[data-room-auto-start]').uncheck();
+ await host.evaluate(()=>{
+  const bridge=PlayroomAppBridge,room=bridge.room();
+  bridge.roomService.setLocalSeat(room.id,room.ownerId,'seat-2',{kind:'empty',nickname:'Игрок'});
+  bridge.renderLobby();
+ });
+ await host.locator('#network-pair-button').tap();
+ const offer=host.locator('#net-host-token');
+ await offer.waitFor({state:'attached'});
+ await guest.locator('#network-join-button').tap();
+ await guest.locator('[data-lobby-online=manual]').tap();
+ await textReceive(guest);
+ await guest.locator('#net-client-offer textarea').fill(await offer.inputValue());
+ await guest.locator('#net-client-offer').evaluate(form=>form.requestSubmit());
+ const reply=guest.locator('#net-client-token');
+ await reply.waitFor({state:'attached'});
+ await textReceive(host);
+ const form=host.locator('#net-host-answer');
+ const answerLink=await reply.inputValue();
+ await form.locator('textarea').fill(answerLink);
+ // Two delivered replies share the same real RTC offer, including the window
+ // in which the first setRemoteDescription is still pending.
+ await form.evaluate(node=>{node.requestSubmit();node.requestSubmit();});
+ await guest.locator('#net-client-join').evaluate(node=>node.requestSubmit());
+ await guest.locator('.lobby-shell').waitFor();
+ await guest.locator('[data-net-seat]:not([disabled])').first().tap();
+ await host.locator('.room-v021-person-copy').filter({hasText:'Гость'}).waitFor();
+ assert.equal(await host.evaluate(()=>PlayroomNetworkDebug().host.connectedPeers),1);
+ await host.evaluate(async link=>{
+  const token=PlayroomPairing.extract(link);
+  navigator.serviceWorker.dispatchEvent(new MessageEvent('message',{data:{kind:'playroom-pair-token',token}}));
+  await new Promise(requestAnimationFrame);
+ },answerLink);
+ assert.deepEqual(await host.evaluate(()=>invitationObservations),{answers:['have-local-offer'],toastErrors:[]});
+ await host.locator('[data-command=lobby-ready]').tap();
+ await guest.locator('[data-net-action=ready]').tap();
+ await host.locator('[data-command=lobby-start]:not([disabled])').tap();
+ await host.locator('.network-game[data-viewer="0"]').waitFor();
+ await guest.locator('.network-game[data-viewer="1"]').waitFor();
+ const actor=await host.locator('.sdk-mark-cell:not([disabled])').count()?host:guest;
+ await actor.locator('.sdk-mark-cell:not([disabled])').first().tap();
+ for(const page of [host,guest])
+  await page.locator('.sdk-mark-cell .mark-token-art').waitFor();
+ assert.deepEqual(issues,[]);
+});
+
+for(const scenario of ['games','wins','score','handoff','handoff-return','handoff-reload','handoff-close','handoff-active'])test(`main app: WebRTC series keeps the same room and counts each result once (${scenario})`,{timeout:90000},async t=>{
+ const activeHandoff=scenario==='handoff-active';
+ const handoff=scenario.startsWith('handoff')&&!activeHandoff,handoffReturn=scenario==='handoff-return',handoffReload=scenario==='handoff-reload',handoffClose=scenario==='handoff-close';
+ const mode=handoff||activeHandoff?'games':scenario;
+ const restart=mode==='wins',usesPoints=mode==='score',game=usesPoints?'dice-poker':'tictactoe',target=usesPoints?24:2;
+ const {s,url}=await server(),browser=await chromium.launch({headless:true,executablePath:executablePath()});
+ t.after(async()=>{await browser.close();await new Promise(resolve=>s.close(resolve));});
+ const errors=[];
+ async function player(name,width){
+  const context=await browser.newContext({playroomProfile:false,viewport:{width,height:844},serviceWorkers:'block'});
+  await context.route('**/*',route=>new URL(route.request().url()).origin===new URL(url).origin?route.continue():route.abort());
+  const page=await context.newPage();page._url=url;page.setDefaultTimeout(12000);
+  page.on('pageerror',error=>errors.push(error.message));
+  await profile(page,name);
+  await observe(page);
+  return page;
+ }
+ function observe(page){return page.evaluate(gameId=>{
+   PlayroomFirstTurnGuide.setEnabled(gameId,false);
+   const prototype=PlayroomClientConnectionService.prototype,accept=prototype.accept;
+   prototype.accept=function(frame,...args){
+    if(frame?.kind==='snapshot'&&frame.game===gameId){
+     window.seriesFrame=frame;window.seriesTransport=this.transport;
+    }
+    return accept.call(this,frame,...args);
+   };
+  },game);}
+ async function join(guest,host,{resume=false}={}){
+  await host.evaluate(()=>PlayroomNetworkLibrary.showManualInvite());
+  await host.waitForFunction(()=>document.querySelector('#net-host-token')?.value);
+  await guest.evaluate(()=>PlayroomNetworkLibrary.showManualJoin());
+  await active(guest).locator('[data-nearby-method=text]').click();
+  await guest.locator('#net-client-offer textarea[name=offer]').fill(await value(host,'#net-host-token'));
+  await guest.locator('#net-client-offer').evaluate(form=>form.requestSubmit());
+  await guest.waitForFunction(()=>document.querySelector('#net-client-token')?.value);
+  await textReceive(host);
+  await host.locator('#net-host-answer textarea[name=answer]').fill(await value(guest,'#net-client-token'));
+  await host.locator('#net-host-answer').evaluate(form=>form.requestSubmit());
+  if(!resume){
+   await guest.locator('#net-client-join').evaluate(form=>form.requestSubmit());
+   await guest.locator('[data-net-seat]:not([disabled])').first().click();
+  }
+  await guest.locator('.lobby-shell').waitFor();
+  await host.evaluate(()=>PlayroomNetworkLibrary.openRoom());
+ }
+ async function openResult(page,id){
+  await page.locator('[data-hub-page=sessions]').click();
+  await page.locator('[data-saved-status=history]').click();
+  await page.locator('.saved-game[data-network-session-id="'+id+'"]').click();
+  await active(page).locator('[data-network-results="'+id+'"]').click();
+  await active(page).locator('[data-series-result]').waitFor();
+ }
+ async function transfer(outgoing,incoming){
+  const id=await incoming.evaluate(()=>PlayroomNetworkLibrary.transferClient().id);
+  await outgoing.locator('[data-room-person="'+id+'"]').click();
+  await outgoing.locator('[data-profile-transfer]').click();
+  await incoming.locator('[data-host-offer-open]').click();
+  await active(incoming).locator('[data-host-offer-accept]').click();
+  await incoming.waitForFunction(id=>PlayroomAppBridge.room()?.ownerId===id,id);
+  await outgoing.waitForFunction(id=>PlayroomNetworkLibrary.transferClient()?.room.ownerId===id,id);
+  assert.equal(await outgoing.evaluate(()=>Object.hasOwn(PlayroomNetworkLibrary.transferClient().room,'seriesProgress')),false);
+ }
+ const [host,guest]=await Promise.all([player('Анна',1000),player('Борис',390)]);
+ await TestUI.openGame(host,game,'network');
+ await host.locator('[data-room-auto-start]').uncheck();
+ await host.evaluate(usesPoints=>{
+  const b=PlayroomAppBridge,r=b.room();
+  b.roomService.setLocalSeat(r.id,r.ownerId,'seat-2',{kind:'empty'});
+  if(usesPoints){
+   b.roomService.updateRules(r.id,r.ownerId,{...r.rules,options:{...r.rules.options,maxRounds:'3'}});
+   const create=TabletopCore.createGame;
+   TabletopCore.createGame=(id,options)=>create(id,id==='dice-poker'?{...options,seed:17}:options);
+  }
+  b.roomService.configure(r.id,r.ownerId,{firstPlayerMode:'assigned',firstParticipantId:r.ownerId});
+  b.renderLobby();
+ },usesPoints);
+ await host.locator('.room-v021-series>summary').click();
+ await host.locator('[data-series-mode]').selectOption(mode);
+ await host.locator('[data-series-target]').fill(String(target));
+ await host.locator('[data-series-target]').press('Tab');
+
+ await join(guest,host);
+ const room=await host.evaluate(()=>PlayroomAppBridge.room().id),sessions=[],scores=[0,0];
+ const participantId=await guest.evaluate(()=>PlayroomNetworkLibrary.inviteContext().participantId);
+ let roomHost=host,client=guest,seriesPackVersion;
+ for(let match=1;match<=2;match++){
+  assert.equal(await client.locator('.lobby-shell').getAttribute('data-room-id'),room);
+  assert.match(await client.locator('.room-v021-series').innerText(),new RegExp(String(target)));
+  await roomHost.locator('[data-command=lobby-ready]').click();
+  await client.locator('[data-net-action=ready]').click();
+  await roomHost.locator('[data-command=lobby-start]:not([disabled])').click();
+  await client.waitForFunction(previous=>window.seriesFrame?.sessionId&&window.seriesFrame.sessionId!==previous,sessions.at(-1)??null);
+  const start=await client.evaluate(()=>({id:window.seriesFrame.sessionId,version:window.seriesFrame.packVersion,revision:window.seriesFrame.revision}));
+  seriesPackVersion??=start.version;
+  assert.equal(start.version,seriesPackVersion);
+  assert.equal(start.revision,0);sessions.push(start.id);
+  if(match===2&&handoffReturn){
+   const current=await client.evaluate(async room=>{
+    const credential=new PlayroomIdentityStore.ResumeStore().load(room);
+    if(!credential)return null;
+    const digest=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(credential.token));
+    return {participantId:credential.participantId,digest:Array.from(new Uint8Array(digest))};
+   },room);
+   assert.equal(current?.participantId,participantId);
+   const tokensMatch=await roomHost.evaluate(async({sessions,current})=>{
+    const store=PlayroomNetworkLibrary.transferStore;
+    const saved=await Promise.all(sessions.map(id=>store.readPrivate(id)));
+    const tokens=saved.map(({record})=>record.recovery.tokens.find(row=>row.participantId===current.participantId)?.token);
+    if(!tokens[0]||!tokens[1]||tokens[0]===tokens[1])return false;
+    const digest=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(tokens[1]));
+    return new Uint8Array(digest).every((value,index)=>value===current.digest[index]);
+   },{sessions,current});
+   assert.equal(tokensMatch,true,'the next journal keeps the new lobby resume credential when hosting returns');
+  }
+  if(usesPoints){
+   let revision=0;
+   for(const key of ['chance','ones','twos'])for(const page of [host,guest]){
+    await page.locator('[data-sdk-dice-port] .sdk-score-roll').click();
+    await guest.waitForFunction(value=>window.seriesFrame?.revision===value,++revision);
+    await page.locator('[data-score-row='+key+'] button').click();
+    await active(page).locator('[data-command=confirm-action]').click();
+    await guest.waitForFunction(value=>window.seriesFrame?.revision===value,++revision);
+   }
+   const points=await guest.evaluate(()=>window.seriesFrame.state.result.metrics.find(metric=>metric.id==='points').values);
+   assert.deepEqual(points,[23,19]);
+   points.forEach((value,player)=>{scores[player]+=value;});
+  }else for(const [index,cell] of [0,3,1,4,2].entries()){
+   const actor=index%2?guest:host,button=actor.locator('.sdk-mark-cell').nth(cell);
+   await button.click();
+   await client.waitForFunction(revision=>window.seriesFrame?.revision===revision,index+1);
+   if(activeHandoff&&match===2&&index===1){
+    const before=await roomHost.evaluate(()=>{
+     const context=PlayroomNetworkLibrary.transferContext();
+     return {room:context.room.id,seats:context.room.seats.map(seat=>seat.participantId)};
+    });
+    const previousTransport=await roomHost.evaluateHandle(()=>window.seriesTransport);
+    await roomHost.evaluate(()=>PlayroomHostTransferUI.show());
+    await active(roomHost).locator('[data-host-transfer-target]').click();
+    await client.locator('[data-host-offer-open]').click();
+    await active(client).locator('[data-host-offer-accept]').click();
+    await client.waitForFunction(()=>PlayroomNetworkLibrary.transferContext()?.kind==='game');
+    assert.deepEqual(await client.evaluate(()=>{
+     const context=PlayroomNetworkLibrary.transferContext();
+     return {room:context.room.id,seats:context.room.seats.map(seat=>seat.participantId),owner:context.room.ownerId,session:context.sessionId};
+    }),{...before,owner:participantId,session:start.id});
+    await roomHost.waitForFunction(previous=>PlayroomNetworkLibrary.transferClient()&&window.seriesTransport!==previous,previousTransport);
+    await previousTransport.dispose();
+    [roomHost,client]=[client,roomHost];
+    assert.deepEqual(await client.evaluate(()=>{
+     const frame=window.seriesFrame;
+     return {session:frame.sessionId,version:frame.packVersion,revision:frame.revision,viewer:frame.viewer};
+    }),{session:start.id,version:start.version,revision:2,viewer:0});
+   }
+  }
+  if(!usesPoints)scores[0]++;
+  for(const page of [host,guest]){
+   const result=active(page).locator('[data-series-result]');await result.waitFor();
+   assert.deepEqual((await result.locator('dd').allTextContents()).map(Number),scores);
+   assert.match(await result.innerText(),new RegExp('Сыграно партий: '+match));
+   assert.equal(await result.locator('[data-series-leader]').count(),match===2?1:0);
+  }
+  const frame=await client.evaluate(()=>window.seriesFrame);
+  assert.equal(frame.packVersion,start.version);
+  assert.deepEqual(frame.state.matchSeriesResult.rules,{mode,target});
+  assert.equal(frame.state.matchSeriesResult.complete,match===2);
+  assert.deepEqual(Object.keys(frame.state.matchSeriesResult).sort(),['complete','played','rows','rules']);
+  assert.deepEqual(Object.keys(frame.state.matchSeriesResult.rows[0]).sort(),['leader','player','value']);
+  if(match===1&&restart){
+   await Promise.all([host.reload(),guest.reload()]);
+   await observe(host);await observe(guest);
+   const fence='playroom.lobby-fence.v1.'+room;
+   await host.evaluate(({fence,id})=>PlayroomData.transact(()=>PlayroomData.setItem(fence,JSON.stringify({seriesSessionId:id}))),{fence,id:sessions[0]});
+   await openResult(host,sessions[0]);
+   assert.equal(await active(host).locator('[data-command=continue-series]').count(),0,'a fenced predecessor stays read-only');
+   await active(host).locator('[data-command=home]').click();
+   await host.evaluate(key=>PlayroomData.transact(()=>PlayroomData.removeItem(key)),fence);
+   await openResult(host,sessions[0]);
+   await active(host).locator('[data-command=continue-series]').click();
+   await host.locator('.lobby-shell').waitFor();
+   await join(guest,host,{resume:true});
+   assert.equal(await guest.evaluate(()=>PlayroomNetworkLibrary.inviteContext().participantId),participantId);
+  }else if(match===1&&handoff){
+   await active(host).locator('[data-command=rematch]').click();
+   await active(guest).locator('[data-command=rematch]').click();
+   await guest.locator('[data-net-action=ready]').waitFor();
+   const roster=await host.evaluate(()=>PlayroomAppBridge.room().seats.map(seat=>seat.participantId));
+   await transfer(host,guest);
+   assert.deepEqual(await guest.evaluate(()=>PlayroomAppBridge.room().seats.map(seat=>seat.participantId)),roster);
+   if(handoffClose){
+    await active(guest).locator('[data-room-context]').click();
+    await active(guest).locator('[data-command=lobby-leave]').click();
+    await active(guest).locator('[data-confirm-accept]').click();
+    await guest.waitForFunction(()=>PlayroomAppBridge.room()===null);
+    await guest.reload();
+    await guest.locator('[data-start=tictactoe]').waitFor();
+    const saved=await guest.evaluate(()=>PlayroomNetworkLibrary.transferStore.listLobbyHandoffs(PlayroomAppBridge.profile().id));
+    assert.deepEqual(saved,[],'a deliberately closed lobby has no checkpoint to reopen');
+    assert.deepEqual(errors,[]);
+    return;
+   }
+   if(handoffReturn){
+    await transfer(guest,host);
+    assert.deepEqual(await host.evaluate(()=>PlayroomAppBridge.room().seats.map(seat=>seat.participantId)),roster);
+   }else{
+    [roomHost,client]=[guest,host];
+    if(handoffReload){
+     const previousActor=await client.evaluate(()=>PlayroomNetworkLibrary.inviteContext().participantId);
+     const name='Серия после передачи';
+     await roomHost.evaluate(name=>{
+      const b=PlayroomAppBridge,r=b.room();
+      b.roomService.configure(r.id,r.ownerId,{name});
+      b.renderLobby();
+     },name);
+     await roomHost.waitForFunction(async({room,name})=>{
+      const checkpoints=await PlayroomNetworkLibrary.transferStore.listLobbyHandoffs(PlayroomAppBridge.profile().id);
+      return checkpoints.some(record=>record.roomId===room&&record.payload.lobby.recovery.room.name===name);
+     },{room,name});
+     await Promise.all([roomHost.reload(),client.reload()]);
+     await Promise.all([observe(roomHost),observe(client)]);
+     await roomHost.waitForFunction(id=>globalThis.PlayroomAppBridge?.room()?.id===id,room);
+     assert.deepEqual(await roomHost.evaluate(()=>{
+      const r=PlayroomAppBridge.room();return {name:r.name,seats:r.seats.map(seat=>seat.participantId)};
+     }),{name,seats:roster});
+     await join(client,roomHost,{resume:true});
+     assert.equal(await client.evaluate(()=>PlayroomNetworkLibrary.inviteContext().participantId),previousActor);
+    }
+   }
+  }else if(match===1){
+   const eager=await active(host).locator('[data-command=rematch]').evaluate(button=>{
+    const prototype=SessionAuthority.prototype,original=prototype._snapshot;
+    let count=0;
+    prototype._snapshot=function(viewer,index,...rest){
+     if(index!==undefined)count++;
+     return original.call(this,viewer,index,...rest);
+    };
+    try{button.click();return count;}finally{prototype._snapshot=original;}
+   });
+   assert.equal(eager,0,'returning to the lobby does not project history eagerly');
+   const history=await guest.evaluate(async()=>{
+    const single=await window.seriesTransport.history(0),range=await window.seriesTransport.historyRange(0,2);
+    const describe=frame=>({sessionId:frame.sessionId,revision:frame.revision,viewer:frame.viewer,kind:frame.kind,actions:frame.actions??[]});
+    return {single:describe(single),range:range.frames.map(describe)};
+   });
+   const expected={sessionId:start.id,viewer:1,revision:0,kind:'history',actions:[]};
+   assert.deepEqual(history,{single:expected,range:[expected,{...expected,revision:1}]});
+   await active(guest).locator('[data-command=rematch]').click();
+   await guest.locator('[data-net-action=ready]').waitFor();
+  }else{
+   await active(client).locator('[data-command=result-replay]').click();
+   await client.locator('#replay-range').waitFor();
+   const activeGameControl=usesPoints?'.sdk-score-roll:not([disabled]):visible':'.sdk-mark-cell:not([disabled])';
+   assert.equal(await client.locator(activeGameControl).count(),0);
+  }
+ }
+ assert.notEqual(sessions[0],sessions[1]);
+ if(handoff||activeHandoff){
+  // A later transfer in the same room can replace the old room-level key.
+  await host.evaluate(key=>PlayroomData.transact(()=>PlayroomData.removeItem(key)),'playroom.lobby-fence.v1.'+room);
+  await host.reload();
+  await openResult(host,sessions[0]);
+  assert.equal(await active(host).locator('[data-command=continue-series]').count(),0,'only the current host can continue an already handed-off series');
+  if(handoffReload){
+   await roomHost.reload();
+   await openResult(roomHost,sessions[1]);
+   assert.equal(await roomHost.evaluate(()=>PlayroomAppBridge.room()),null,'the journal of the started match supersedes the transferred lobby');
+  }
+ }else if(restart||usesPoints){
+  await host.reload();await openResult(host,sessions[usesPoints?1:0]);
+  assert.equal(await active(host).locator('[data-command=continue-series]').count(),0,'a prior result cannot branch the series');
+ }
+ assert.deepEqual(errors,[]);
+});
+
+test('main app: sealed choices and host deadline over WebRTC with a public Table',{timeout:90000},async t=>{
+ const pack=process.env.PLAYROOM_SDK_SEALED_SIGNAL_PACK;
+ if(!pack){t.skip('Use the compiled sealed-signal SDK example');return;}
+ const {s,url}=await server(),browser=await chromium.launch({headless:true,executablePath:executablePath()});
+ t.after(async()=>{await browser.close();await new Promise(resolve=>s.close(resolve));});
+ const errors=[];
+ async function participant(name,width){
+  const context=await browser.newContext({playroomProfile:false,viewport:{width,height:844},serviceWorkers:'block'});
+  await context.route('**/*',route=>new URL(route.request().url()).origin===new URL(url).origin?route.continue():route.abort());
+  const page=await context.newPage();page._url=url;
+  page.setDefaultTimeout(12000);page.on('pageerror',error=>errors.push(error.message));
+  await profile(page,name);
+  await page.locator('[data-hub-page=profile]').click();
+  await page.locator('#hub-profile-page [data-command=packs]').click();
+  const dialog=active(page);
+  await dialog.locator('#pack-file').setInputFiles(pack);
+  await dialog.locator('[data-pack-install]').click();
+  await dialog.locator('[data-installed-pack][data-pack-id=sealed-signal]').waitFor();
+  await dialog.locator('.modal-head [data-command=close-modal]').click();
+  await page.locator('[data-hub-page=games]').click();
+  await observeFrames(page);
+  return page;
+ }
+ async function observeFrames(page){
+  await page.evaluate(()=>{
+   window.signalFrames=new Map();
+   const service=PlayroomClientConnectionService.prototype,accept=service.accept;
+   service.accept=function(frame,...args){
+    if(frame?.game==='sealed-signal'&&frame.kind==='snapshot'){window.signalClient=this;signalFrames.set(frame.revision,frame);}
+    return accept.call(this,frame,...args);
+   };
+  });
+ }
+ const [host,phone,table]=await Promise.all([participant('Ведущий',1000),participant('Игрок',390),participant('Стол',620)]);
+ await TestUI.openGame(host,'sealed-signal','network');
+ await host.locator('[data-room-auto-start]').uncheck();
+ async function join(page,{resume=false}={}){
+  await host.evaluate(()=>PlayroomNetworkLibrary.showManualInvite());
+  await host.locator('#net-host-token').waitFor({state:'attached'});
+  const offer=await value(host,'#net-host-token');
+  await page.evaluate(()=>PlayroomNetworkLibrary.showManualJoin());
+  await active(page).locator('[data-nearby-method=text]').click();
+  await page.locator('#net-client-offer textarea[name=offer]').fill(offer);
+  await page.locator('#net-client-offer').evaluate(form=>form.requestSubmit());
+  await page.waitForFunction(()=>document.querySelector('#net-client-token')?.value);
+  await textReceive(host);
+  await host.locator('#net-host-answer textarea[name=answer]').fill(await value(page,'#net-client-token'));
+  await host.locator('#net-host-answer').evaluate(form=>form.requestSubmit());
+  if(resume){await page.locator('.table-shell.network-game').waitFor();return;}
+  await page.locator('#net-client-join').waitFor();
+  await page.locator('#net-client-join').evaluate(form=>form.requestSubmit());
+  await page.locator('.lobby-shell').waitFor();
+  await host.evaluate(()=>PlayroomNetworkLibrary.openRoom());
+ }
+ await join(phone);
+ await phone.locator('[data-net-seat]:not([disabled])').first().click();
+ await join(table);
+ const spectator=await table.evaluate(()=>PlayroomNetworkLibrary.inviteContext().participantId);
+ await active(table).locator('[data-room-person="'+spectator+'"]').click();
+ await active(table).locator('[data-net-action=table]').click();
+ await active(table).locator('.modal-head [data-command=close-modal]').click();
+ await host.waitForFunction(()=>PlayroomAppBridge.room().participants.some(person=>person.role==='table'));
+ await host.evaluate(()=>{
+  const bridge=PlayroomAppBridge,room=bridge.room();
+  bridge.roomService.configure(room.id,room.ownerId,{firstPlayerMode:'assigned',firstParticipantId:room.ownerId});
+  bridge.renderLobby();
+ });
+ await host.locator('[data-command=lobby-ready]').click();
+ await phone.locator('[data-net-action=ready]').click();
+ await host.clock.install();
+ await host.locator('[data-command=lobby-start]:not([disabled])').click();
+ const pages=[host,phone,table],prompt=page=>page.locator('.network-game .sdk-prompt');
+ await Promise.all(pages.map(page=>prompt(page).filter({hasText:'готовы 0 из 2'}).waitFor()));
+ const choice=(page,label)=>page.locator('.network-game').getByRole('button',{name:label,exact:true});
+ assert.equal(await choice(table,'Взять').count(),0);
+ assert(await phone.evaluate(()=>{const first=signalFrames.get(0);return first.viewer!==first.state.turn;}),'the second seat can choose before the assigned first player');
+ await choice(phone,'Взять').click();
+ await Promise.all(pages.map(page=>page.waitForFunction(()=>signalFrames.has(1))));
+ const at=async(page,revision)=>page.evaluate(revision=>{
+  const frame=signalFrames.get(revision),data=frame.state.sdkProjection?.data??frame.state.modelProjection?.data;
+  return {viewer:frame.viewer,role:frame.role,data,actions:frame.actions.map(action=>action.type),
+   events:frame.events.filter(event=>event.type?.startsWith('signal.')).map(({type,params})=>({type,params}))};
+ },revision);
+ const [owner,privatePlayer,publicTable]=await Promise.all(pages.map(page=>at(page,1)));
+ assert.equal(privatePlayer.data.selected,'claim');
+ for(const frame of [owner,publicTable]){
+  assert.equal(frame.data.selected,null);
+  assert.equal(frame.data.reveal,null);
+  assert.deepEqual(Object.keys(frame.data).sort(),['deadline','die','reveal','selected','startedAt']);
+  assert.deepEqual(frame.events,[{type:'signal.committed',params:{}}]);
+ }
+ assert.equal(publicTable.role,'table');
+ assert.equal(publicTable.viewer,-1);
+ assert.deepEqual(publicTable.actions,[]);
+ const member=await phone.evaluate(()=>PlayroomNetworkLibrary.inviteContext().participantId);
+ await phone.reload({waitUntil:'domcontentloaded'});
+ await TestUI.ready(phone);
+ await observeFrames(phone);
+ await join(phone,{resume:true});
+ await phone.waitForFunction(()=>signalFrames.has(1));
+ assert.equal(await phone.evaluate(()=>PlayroomNetworkLibrary.inviteContext().participantId),member);
+ assert.deepEqual(await at(phone,1),privatePlayer,'resume restores the same private viewer and already accepted decision');
+ await host.clock.fastForward(21000);
+ await Promise.all(pages.map(page=>page.waitForFunction(()=>signalFrames.has(2))));
+ const finals=await Promise.all(pages.map(page=>at(page,2)));
+ const result=finals[0].data.reveal,actor=privatePlayer.viewer;
+ assert.deepEqual(result,{choices:actor===0?['claim',null]:[null,'claim'],scores:actor===0?[owner.data.die,0]:[0,owner.data.die],reason:'timeout'});
+ for(const frame of finals)assert.deepEqual(frame.events.filter(event=>event.type==='signal.revealed'),[{type:'signal.revealed',params:result}]);
+ await Promise.all(pages.map(page=>prompt(page).filter({hasText:'Раскрытие:'}).waitFor({state:'attached'})));
+ await host.clock.fastForward(21000);
+ assert.deepEqual(await Promise.all(pages.map(page=>page.evaluate(()=>Math.max(...signalFrames.keys())))),[2,2,2]);
+ await Promise.all([phone,table].map(async page=>{
+  await active(page).locator('[data-command=result-replay]').click();
+  const slider=page.locator('#replay-range');
+  await prompt(page).filter({hasText:'готовы 0 из 2'}).waitFor();
+  await page.evaluate(()=>{
+   // Read this revision through the transport, even when a live frame or
+   // background history backfill has already populated the local cache.
+   const client=signalClient,read=client.readHistory,transport=client.transport,history=transport.history;
+   client.historyFrames.delete(1);
+   client.readHistory=(index,...args)=>index===1?null:read?.(index,...args);
+   client.transport={...transport,async history(index){
+    const frame=await history.call(this,index);
+    if(index===1)window.signalHistoryFrame=frame;
+    return frame;
+   }};
+  });
+  await slider.focus();await slider.press('ArrowRight');
+  await page.waitForFunction(()=>!!window.signalHistoryFrame);
+  await page.waitForFunction(()=>document.querySelector('.network-game')?.dataset.revision==='1');
+  const history=await page.evaluate(()=>{
+   const f=signalHistoryFrame,p=f.state.sdkProjection??f.state.modelProjection;
+   return {viewer:f.viewer,revision:f.revision,kind:f.kind,selected:p.data.selected,reveal:p.data.reveal,actions:f.actions};
+  });
+  const player=page===phone;
+  assert.deepEqual(history,{viewer:player?actor:-1,revision:1,kind:'history',selected:player?'claim':null,reveal:null,actions:[]});
+  assert.match(await prompt(page).innerText(),player?/Ваш выбор: Взять/:/готовы 1 из 2/);
+  assert.equal(await choice(page,'Взять').count(),0);
+  await slider.press('End');
+  await prompt(page).filter({hasText:'Раскрытие:'}).waitFor();
+ }));
+ assert.deepEqual(errors,[]);
+});
 
 test('main app: public Table over WebRTC shares moves with a player without gaining private viewer rights',{timeout:90000},async()=>{
  const {s,url}=await server(),browser=await chromium.launch({headless:true,executablePath:executablePath(),args:['--no-sandbox','--disable-background-networking']});
@@ -107,16 +618,17 @@ await host.locator('[data-room-chat-messages]').filter({hasText:':wow:'}).waitFo
    assert.notEqual(await host.locator('[data-room-chat-form] [data-chat-editor]').innerText(),'Черновик прежнего участника');
    await host.locator('.game-chat-panel [data-command=close-modal]').click();await host.locator('.game-chat-panel').waitFor({state:'detached'});
   }
-  await table.locator('.network-game[data-viewer="-1"] .ttt-cell[data-action]').first().waitFor();
-  await table.locator('.ttt-cell').nth(4).click();await host.locator('.ttt-cell.cross').waitFor();
-  await phone.locator('.ttt-cell[data-action]').first().waitFor();if(await phone.locator('[data-learning-choice=no]').isVisible())await phone.locator('[data-learning-choice=no]').click();await phone.locator('.ttt-cell').nth(0).click();
-  await host.locator('.ttt-cell.nought').waitFor();
-  await table.locator('.ttt-cell[data-action]').first().waitFor();await table.locator('.ttt-cell').nth(1).click();
-  await table.waitForFunction(()=>document.querySelectorAll('.ttt-cell.cross').length===2);
+  const cell='.sdk-mark-cell',enabled=cell+':not([disabled])';
+  await table.locator('.network-game[data-viewer="-1"] '+enabled).first().waitFor();
+  await table.locator(cell).nth(4).click();await host.locator(cell+'.is-cross').waitFor();
+  await phone.locator(enabled).first().waitFor();if(await phone.locator('[data-learning-choice=no]').isVisible())await phone.locator('[data-learning-choice=no]').click();await phone.locator(cell).nth(0).click();
+  await host.locator(cell+':not(.is-cross) .mark-token-art').waitFor();
+  await table.locator(enabled).first().waitFor();await table.locator(cell).nth(1).click();
+  await table.waitForFunction(()=>document.querySelectorAll('.sdk-mark-cell.is-cross').length===2);
   assert.equal(await table.locator('.network-game').getAttribute('data-viewer'),'-1');
   assert.equal(await host.locator('.network-game').getAttribute('data-viewer'),'0');
   await table.locator('[data-game-menu]').click();await table.locator('[data-command=history]').click();await table.locator('#replay-range').waitFor();
-  assert.equal(await table.locator('.ttt-cell[data-action]').count(),0);
+  assert.equal(await table.locator(enabled).count(),0);
   assert.deepEqual(errors,[]);
  }finally{await browser.close();await new Promise(resolve=>s.close(resolve));}
 });

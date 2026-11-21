@@ -20,7 +20,7 @@
   if(previousControl!==controlRevision)throw Error('CHECKPOINT_CONTROL_INVALID');
   const actions=steps.map(({a})=>({actor:a[0],command:a[1],...(a[2]?{players:a[2]}:{}),...(a[3]!==undefined?{now:a[3]}:{})}));
   const playerControl=Controls.validate(record,record.initial.states[0].players,record.revision);
-  return {...playerControl,session:Session.restoreCheckpoint(engine,{initial:record.initial,checkpoint:record.checkpoint,actions,updatedAt:Math.max(record.updatedAt,record.initial.updatedAt)}),sessionId,revision:record.revision,room:clone(record.room),recovery:record.recovery?clone(record.recovery):null,packDigest:record.packDigest||null,hostDeviceId:record.hostDeviceId||null,paused:!!record.paused,clockTime:record.clockTime??record.checkpoint.state.clock??0,clockUpdatedAt:record.clockUpdatedAt??record.updatedAt,controlRevision,receipts:clone([...receipts,...controls])};
+  return {...playerControl,session:Session.restoreCheckpoint(engine,{initial:record.initial,checkpoint:record.checkpoint,actions,updatedAt:Math.max(record.updatedAt,record.initial.updatedAt)}),sessionId,seriesSuccessor:record.seriesSuccessor||null,seriesHandoff:record.seriesHandoff||null,revision:record.revision,room:clone(record.room),recovery:record.recovery?clone(record.recovery):null,packDigest:record.packDigest||null,hostDeviceId:record.hostDeviceId||null,paused:!!record.paused,clockTime:record.clockTime??record.checkpoint.state.clock??0,clockUpdatedAt:record.clockUpdatedAt??record.updatedAt,controlRevision,receipts:clone([...receipts,...controls])};
  }
  return Object.freeze({restore});
 });

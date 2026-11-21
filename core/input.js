@@ -8,7 +8,7 @@
   // authoritative actions; this module never infers a move or accesses rules.
   const policy=root.PlayroomSizeCatalogue?.presentation?.interaction||{};
   const requiredFeedback=new WeakMap();
-  function attach({ canStart = () => true, canSelect = canStart, canCommit = canStart, getSelected = () => null, select, commit, scope = root.document?.documentElement, handSelector = '.hand-track, .hand-cards, .hand-scroll, [data-hand-scroll]' } = {}) {
+  function attach({ canStart = () => true, canSelect = canStart, canCommit = canStart, getSelected = () => null, select, commit, dragVisual = element => element, scope = root.document?.documentElement, handSelector = '.hand-track, .hand-cards, .hand-scroll, [data-hand-scroll]' } = {}) {
     if (typeof select !== 'function' || typeof commit !== 'function') throw Error('TabletopInput requires select and commit callbacks');
     if (!root.document?.documentElement) throw Error('TabletopInput.attach requires a browser document');
     const doc = root.document, capture = doc.documentElement;
@@ -169,6 +169,7 @@
       s.hover?.classList.remove('playroom-drop-hover');
       s.source.classList.remove('playroom-drag-source');
       s.renderedSource?.classList.remove('playroom-drag-source');
+      s.renderedVisual?.classList.remove('playroom-drag-source');
       for(const node of s.stackSources||[])node.classList.remove('playroom-drag-source');
       s.ghost?.remove();
       capture.classList.remove('playroom-dragging');
@@ -189,7 +190,10 @@
       clearTimeout(s.timer);
       if (!s.drag || !s.source.isConnected || !canStart(s.source) || !canSelect(s.source)) { cleanup(); return; }
       // Clone before select(): selecting may synchronously replace the scene.
-      const rect = s.source.getBoundingClientRect(), style = root.getComputedStyle(s.source),pose=root.PlayroomMotion?.poseOf(s.source)||rect;
+      // A semantic hit target can sit above an independently owned piece.
+      // Only its visual leaves the field; command and focus stay on the target.
+      const proposed=dragVisual(s.source),visual=within(proposed)?proposed:s.source;
+      const rect=visual.getBoundingClientRect(),style=root.getComputedStyle(visual),pose=root.PlayroomMotion?.poseOf(visual)||rect;
       const shape=/^([1-8]):([hv])$/.exec(s.source.dataset.dragShape||'');
       const unit=shape?s.source.closest('.scene')?.querySelector('[data-drag-unit]')?.getBoundingClientRect():null;
       s.gridShape=!!shape;s.vertical=shape?.[2]==='v';s.segment=Number(s.source.dataset.dragSegment)||0;
@@ -211,7 +215,7 @@
           s.ghost.append(clone);bottom=Math.max(bottom,r.bottom);
         }
         s.height=bottom-rect.top;
-      }else s.ghost=shape&&unit?doc.createElement('div'):s.source.cloneNode(true);
+      }else s.ghost=shape&&unit?doc.createElement('div'):visual.cloneNode(true);
       if(shape&&unit){s.ghost.className='playroom-composite-ghost';s.ghost.style.gridTemplateColumns=`repeat(${s.vertical?1:Number(shape[1])},1fr)`;s.ghost.style.gridTemplateRows=`repeat(${s.vertical?Number(shape[1]):1},1fr)`;for(let i=0;i<Number(shape[1]);i++)s.ghost.append(doc.createElement('span'));}
       for (const el of [s.ghost, ...s.ghost.querySelectorAll('*')]) {
         el.removeAttribute('id'); el.removeAttribute('data-drag-piece'); el.removeAttribute('data-select'); el.removeAttribute('data-action'); el.removeAttribute('data-entity'); el.removeAttribute('data-swipe-action'); el.removeAttribute('data-swipe-select'); el.removeAttribute('data-hand-preview');
@@ -236,6 +240,7 @@
       if (active !== s) return;
       s.renderedSource = [...scope.querySelectorAll('[data-drag-piece]')].find(el => el.dataset.dragPiece === s.piece);
       s.renderedSource?.classList.add('playroom-drag-source');
+      if(s.renderedSource){const rendered=dragVisual(s.renderedSource);if(rendered!==s.renderedSource&&within(rendered)){s.renderedVisual=rendered;rendered.classList.add('playroom-drag-source');}}
       if(members.length>1){const fresh=s.renderedSource?.closest('[data-drag-stack]');s.stackSources=[...(fresh?.querySelectorAll('[data-drag-stack-member]')||[])].filter(node=>Number(node.dataset.dragStackMember)>=s.stackIndex).map(node=>node.firstElementChild).filter(Boolean);for(const node of s.stackSources)node.classList.add('playroom-drag-source');}
       paint(s);
     }

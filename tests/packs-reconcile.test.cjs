@@ -13,7 +13,16 @@ test('compressed pack storage preserves exact versions, quarantine, preferences 
  const snapshot=JSON.stringify({format:'playroom-packs',formatVersion:1,packs:[old,current],active:{demo:'1.1.0'},removed:['other@1.0.0'],quarantined:[{bundle:bundle('quarantine'),reason:'retained'}],rawBackups:['invalid bytes '.repeat(1000)]});
  const data=durable(snapshot),storage=await PackStorage.create({data,key:'packs'});assert.equal(storage.get(),snapshot);
  await storage.commit(snapshot);assert.equal(JSON.parse(data.getItem()).encoding,'gzip-base64-v1');assert(Buffer.byteLength(data.getItem())<Buffer.byteLength(snapshot)/2);
- const reloaded=await PackStorage.create({data,key:'packs'});assert.equal(reloaded.get(),snapshot);
+ const compression=require('../application/save-compression.js'),transact=data.transact;
+ let encodes=0,transactions=0;
+ data.transact=(...args)=>{transactions++;return transact(...args);};
+ const codec={...compression,encode(...args){encodes++;return compression.encode(...args);}};
+ const reloaded=await PackStorage.create({data,key:'packs',codec});assert.equal(reloaded.get(),snapshot);
+ const physical=data.getItem();
+ await reloaded.commit(snapshot);
+ assert.deepEqual({encodes,transactions},{encodes:0,transactions:0});
+ assert.equal(data.getItem(),physical);
+ await assert.rejects(reloaded.commit(snapshot,{guard(){throw Error('stale');}}),/stale/);
  const incompatible=JSON.parse(snapshot);incompatible.quarantined[0].bundle.manifest.engineApi=3;await reloaded.commit(JSON.stringify(incompatible));assert.equal(JSON.parse(reloaded.get()).quarantined[0].bundle.manifest.engineApi,3);
 });
 test('compressed pack storage failures and cancellation preserve prior bytes; plain fallback and deletion work',async()=>{
@@ -134,5 +143,16 @@ test('remote catalog never offers an older release or prerelease over a newer in
  const {RemoteCatalog}=require('../app/remote-catalog.js');
  for(const [installed,available,pending] of [['0.6.8-preview.26','0.6.8',true],['0.6.8','0.6.8-preview.26',false],['0.6.9-preview.2','0.6.8',false],['0.6.7','0.6.8',true],['0.6.8-preview.9','0.6.8-preview.10',true],['0.6.8-preview.10','0.6.8-preview.9',false],['0.6.8','0.6.8+rebuilt',false]]){
   const remote=new RemoteCatalog({manager:{list:()=>[{id:'demo',version:installed}]},storage:{getItem:()=>null}});remote.current={packs:[{id:'demo',version:available}]};assert.equal(remote.pending().length,Number(pending),installed+' -> '+available);
+ }
+});
+
+test('renamed games update from a legacy ID once and preserve the exact historical pack',()=>{
+ const {RemoteCatalog}=require('../app/remote-catalog.js');
+ for(const [id,legacy] of [['one-oh-one','uno'],['fleet-grid','battleship'],['dice-poker','yatzy']]){
+  const installed=[{id:legacy,version:'9.0.0'}],remote=new RemoteCatalog({manager:{list:()=>installed},storage:{getItem:()=>null}});
+  const item={id,version:'1.0.0',replaces:[legacy]};remote.current={packs:[item]};
+  assert.deepEqual(remote.updates(),[item]);
+  installed.push({id,version:item.version});assert.deepEqual(remote.updates(),[]);
+  assert.equal(installed[0].id,legacy);
  }
 });

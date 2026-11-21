@@ -1,5 +1,6 @@
 'use strict';
 const crypto=require('node:crypto');
+const {BUDGET}=require('../sdk/budget.cjs');
 function row(file,buffer,mime){return {file,mime,data:buffer.toString('base64'),bytes:buffer.length,sha256:crypto.createHash('sha256').update(buffer).digest('hex')};}
 const svg=text=>Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10">'+(text||'<circle cx="5" cy="5" r="4"/>')+'</svg>');
 function png(width=1,height=1,size=24){const b=Buffer.alloc(size);b.write('89504e470d0a1a0a',0,'hex');b.write('IHDR',12);b.writeUInt32BE(width,16);b.writeUInt32BE(height,20);return b;}
@@ -8,7 +9,7 @@ function jpeg(width=1,height=1){const b=Buffer.from([255,216,255,192,0,8,8,0,0,0
 function wav(seconds){const b=Buffer.alloc(44+8000*seconds);b.write('RIFF');b.writeUInt32LE(b.length-8,4);b.write('WAVEfmt ',8);b.writeUInt32LE(16,16);b.writeUInt16LE(1,20);b.writeUInt16LE(1,22);b.writeUInt32LE(8000,24);b.writeUInt32LE(8000,28);b.writeUInt16LE(1,32);b.writeUInt16LE(8,34);b.write('data',36);b.writeUInt32LE(b.length-44,40);return b;}
 const base=()=>row('assets/valid.svg',svg(),'image/svg+xml');
 function cases(){return [
- ['count',Array.from({length:257},(_,i)=>({...base(),file:'assets/tiny-'+i+'.svg'})),'SDK_ASSET_COUNT'],
+ ['count',Array.from({length:BUDGET.files+1},(_,i)=>({...base(),file:'assets/tiny-'+i+'.svg'})),'SDK_ASSET_COUNT'],
  ['aggregate',[...Array.from({length:4},(_,i)=>row('assets/p'+i+'.png',png(1,1,500000),'image/png')),row('assets/over.png',png(),'image/png')],'SDK_ASSET_TOTAL_LIMIT'],
  ['decoded',Array.from({length:3},(_,i)=>row('assets/large'+i+'.png',png(2000,2000),'image/png')),'SDK_DECODED_IMAGE_LIMIT'],
  ['png-side',[row('assets/large.png',png(2049,1),'image/png')],'SDK_IMAGE_LIMIT'],

@@ -53,7 +53,16 @@ Library записывает librarySummary до сериализованной 
 
 ### Независимые реакции
 
+Authority передаёт список разрешённых вариантов в `GameModel.reactionControls` одной группой. Модель вызывает хук пака для каждого варианта с общей неизменяемой позицией. Authority учитывает готовность и дедлайны и составляет список независимых действий из тех же записей, что и основной список. При выполнении команды движок использует результат проверки для канонизации, а правила проверяют итоговую команду перед переходом.
+
+Локальный и сетевой экраны используют `independentActions` из кадра
+authority, пока обычные команды ждут завершения показа. Оболочка выбирает
+разрешённый список по состоянию экрана. Право на реакцию и его изменение
+по дедлайну остаются у authority.
+
 Definition может объявить reactions(Position, actor) с теми же `{command, visibility}`, reactionControl(Position, actor, command), reactionWindows(Position), botReaction(projection, actor, actions, memory). Обычные legalActions/botAction не включают реакции; availableActions/project включают обе группы. public reactions доступны на Столе при отдельном actor. reactionControl возвращает kind/episode/target/independent/ignore; необязательный command нормализует аргументы по правилам игры. Повтор разрешённого старого эпизода — no-op без revision/фактов. reactionWindows описывает owner/revision/humanMs/botMs/fallbackMs; время и тип клиента принадлежат authority.
+
+Хуки `botReaction(projection, actor, actions, memory, settings)` и `botReactionDelay(projection, actor, settings, memory)` получают `null` в `settings`, если настройки бота отсутствуют. Контракт одинаков для обычной и изолированной модели. Механизм бота выбирает предусмотренный паком профиль по умолчанию.
 
 Presentation.choice может вернуть MessageRef в confirmation/targetPrompt и другие подписи; host форматирует их после projection. Presentation.event может дать notice (title/detail refs, tone), speech, sound и public target. Domain не знает имён участников и DOM. UNO-schema требует явных ситуаций; legacy missing state не восстанавливается скрытым fallback.
 
@@ -66,6 +75,10 @@ Presentation.choice может вернуть MessageRef в confirmation/targetP
 
 
 ### Метрики, команда и результат
+
+Локальная серия партий хранит перед началом каждой партии её номер, накопленный итог и соответствие игроков устойчивым ID участников. `application/match-series.js` применяет итог завершённой партии к снимку серии. Следующая партия получает новый seed и отдельный журнал. Движок получает обычные параметры пака, а данные серии сохраняются в `Session.options.matchSeries`.
+
+У режима серии до суммы очков есть явное подключение. `PlayroomPackPresentation.metadata.seriesScoreMetric` задаёт ID числовой метрики из `GameModel.result().metrics`. Значение должно быть итогом для каждого игрока в порядке модели, где большее число лучше. Метрики с `order: 'asc'` и `display: 'ranking'` для суммы не подходят. Режимы по числу партий и побед используют `status` и `winners`.
 
 SceneModel.players содержит `player` (или id), metrics `{id,kind,value,label,resultUsage}` и необязательный team `{id,label,color}`. kind задаёт points/wins/pieces явно, подпись не влияет на оформление. Host форматирует labels после privacy projection; сохраняются semantic IDs. hand-count имеет отдельный ID. Карточки и результаты используют общую функцию playerContent и не пересчитывают игровой результат в Web renderer. Result.metrics могут объявить `display: 'ranking'` для агрегата, используемого для места, без повторной строки текста. Остальные дополнения показываются только если их ID отсутствует среди видимых счётчиков.
 
@@ -174,6 +187,8 @@ Authority по-прежнему проверяет глобальную revision
 
 
 Бот сохраняет прежние четыре аргумента; пятый context может предоставляться необязательным `Definition.botContext(position, actor)`. Это доверенный внутренний порт чистых правил, не viewer projection; пак должен передавать только данные для воспроизводимости решения, без чужих рук/планов. `shared/domain/bot-policy` отделяет поток выбора профиля и решения от колоды.
+
+Изолированный хост передаёт проверенный JSON вызова в среду правил без повторной сериализации позиции. Модель один раз подтверждает неизменяемый снимок для проекции, выбора команд и авторских функций наблюдения. Свежая среда бота получает только разрешённую проекцию, команды, память, контекст и данные для воспроизводимого выбора.
 
 Общие `cardFrame/cardBack` принимают `shape:'square'`. Frame, рубашка и поворот остаются частью `card-deck`; host резервирует высоту квадратной руки и прокручиваемый список участников для сцены с приоритетом поля. `publicFrames` принимает уже публичные кадры `{label,markup}` и финальный `live`; проигрыватель ускоряет, приостанавливает и пропускает показ без игровых команд. Пак обязан применить privacy до подготовки каждого кадра.
 

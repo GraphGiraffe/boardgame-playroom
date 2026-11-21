@@ -63,7 +63,20 @@
   }).join('');
  }
  function contents(titles,{esc,label,optionsLabel}){
-  return `<details class="rulebook-toc"><summary>${esc(label)}</summary><nav id="rulebook-contents" class="rulebook-contents" tabindex="-1" aria-label="${esc(label)}"><h3>${esc(label)}</h3><ol>${titles.map((title,index)=>title?`<li><a href="#rulebook-section-${index}" data-rulebook-jump="rulebook-section-${index}">${esc(title)}</a></li>`:'').join('')}<li><a href="#rulebook-options" data-rulebook-jump="rulebook-options">${esc(optionsLabel)}</a></li></ol></nav></details>`;
+  const options=optionsLabel?`<li><a href="#rulebook-options" data-rulebook-jump="rulebook-options">${esc(optionsLabel)}</a></li>`:'';
+  return `<details class="rulebook-toc"><summary>${esc(label)}</summary><nav id="rulebook-contents" class="rulebook-contents" tabindex="-1" aria-label="${esc(label)}"><h3>${esc(label)}</h3><ol>${titles.map((title,index)=>title?`<li><a href="#rulebook-section-${index}" data-rulebook-jump="rulebook-section-${index}">${esc(title)}</a></li>`:'').join('')}${options}</ol></nav></details>`;
+ }
+ // Both the game and Studio use the same tabs, scroll targets and styled content.
+ function reader({brief,sections,titles,summary='',options='',optionsLabel,contentsLabel='Оглавление'},{esc}){
+  const id=root.PlayroomGameScreen.pageTabsId();
+  const compact=brief?brief.replaceAll('id="rulebook-section-','id="rulebook-brief-'):'<p>У этой версии игры нет краткого обзора.</p><button type="button" class="menu-row" data-rulebook-mode="full">Читать полные правила</button>';
+  const toc=contents(titles,{esc,label:contentsLabel,optionsLabel});
+  const config=optionsLabel?`<hr class="rulebook-divider"><section class="rulebook-config" id="rulebook-options" tabindex="-1"><h3>${esc(optionsLabel)}</h3>${options}</section>`:'';
+  return `<section class="game-rules-help" id="rulebook-top" tabindex="-1"><div class="rulebook-mode app-page-tabs shared-page-tabs" style="--page-count:2;--page-index:0" role="tablist" aria-label="Объём правил">`
+   +`<button type="button" data-rulebook-mode="brief" id="${id}-tab-brief" aria-controls="${id}-panel-brief" role="tab" aria-selected="true" tabindex="0" aria-pressed="true">Кратко</button>`
+   +`<button type="button" data-rulebook-mode="full" id="${id}-tab-full" aria-controls="${id}-panel-full" role="tab" aria-selected="false" tabindex="-1" aria-pressed="false">Полные правила</button></div>`
+   +`<div data-rulebook-brief id="${id}-panel-brief" aria-labelledby="${id}-tab-brief" class="rulebook-brief-short" role="tabpanel" aria-label="Кратко">${compact}</div>`
+   +`<div data-rulebook-full id="${id}-panel-full" aria-labelledby="${id}-tab-full" role="tabpanel" aria-label="Полные правила" hidden>${summary}${toc}<div class="rulebook-main">${sections}</div>${config}</div></section>`;
  }
  function selectMode(rules,full){
   rules.querySelector('[data-rulebook-full]').hidden=!full;rules.querySelector('[data-rulebook-brief]').hidden=full;
@@ -88,5 +101,5 @@
   body.scrollTo({top:id==='rulebook-top'?0:body.scrollTop+target.getBoundingClientRect().top-body.getBoundingClientRect().top-(toc?.getBoundingClientRect().height||0)-8,behavior:root.matchMedia('(prefers-reduced-motion: reduce)').matches?'instant':'smooth'});
   target.focus({preventScroll:true});
  });
- return Object.freeze({render,renderBrief,header,contents});
+ return Object.freeze({render,renderBrief,header,contents,reader});
 });
