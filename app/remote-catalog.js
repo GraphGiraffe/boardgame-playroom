@@ -47,16 +47,20 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       const installed=this.manager.list(),compare=this.manager.constructor?.compareVersions||compareVersions;
       return (this.current?.packs||[]).filter(item=>installed.filter(row=>row.id===item.id).every(row=>compare(item.version,row.version)>0));
     }
-    async prepare(id){
+    async prepare(id,{version,signal}={}){
+      // Multiplayer requires the host's exact version from the trusted catalog.
+      // The normal update path still offers only upgrades.
+      const exact=()=>this.current?.packs.find(entry=>entry.id===id&&entry.version===version);
       this.requireAvailable();
-      const item=this.pending().find(entry=>entry.id===id);
+      if(version&&!exact())await this.refresh({signal});
+      const item=version?exact():this.pending().find(entry=>entry.id===id);
       if(!item)throw Error(globalThis.PlayroomMessages.text("ui.remote-catalog.3456539518cb"));
       const supported=this.manager.constructor?.SDK_FEATURES||[];
       if(item.sdkFeatures?.some(feature=>!supported.includes(feature)))throw Object.assign(Error(globalThis.PlayroomMessages.text('errors.PACK_SDK_UNSUPPORTED')),{code:'PACK_SDK_UNSUPPORTED'});
       if(!this.crypto?.subtle)throw Error(globalThis.PlayroomMessages.text("ui.remote-catalog.b01d9b44b6a3"));
       const bytes=await Deadline.run(async(signal,touch)=>{const response=await this.fetcher(this.basePath+item.url.slice('/api/packs/'.length),{cache:'no-store',credentials:'same-origin',redirect:'error',signal});
       if(!response.ok||response.redirected)throw Error(globalThis.PlayroomMessages.text("ui.remote-catalog.40a73e8f9f18",{p0:String(response.status)}));
-      return Deadline.bytes(response,{signal,touch,limit:4*1024*1024});},{timeout:this.requestTimeout});
+      return Deadline.bytes(response,{signal,touch,limit:4*1024*1024});},{signal,timeout:this.requestTimeout});
       const hash=[...new Uint8Array(await this.crypto.subtle.digest('SHA-256',bytes))].map(value=>value.toString(16).padStart(2,'0')).join('');
       if(hash!==item.sha256)throw Error(globalThis.PlayroomMessages.text("ui.remote-catalog.f5fc3d7faf71"));
       const bundle=this.manager.parse(new TextDecoder('utf-8',{fatal:true}).decode(bytes));

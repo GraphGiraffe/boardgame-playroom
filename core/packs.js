@@ -215,7 +215,8 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       return {...this._descriptor(item),styles:item.styles,sounds:item.catalog.sounds||{},catalog:item.catalog};
     }
     activate(id,version){return this._apply(this._resolve(id,version));}
-    install(token,{activate=true}={}){
+    install(token,{activate=true,guard=()=>{}}={}){
+      guard();
       const entry=prepared.get(token);if(!entry||entry.owner!==this)throw Error(globalThis.PlayroomMessages.text("ui.packs.5701002a2027"));
       const item=entry.compiled,m=item.bundle.manifest,k=key(m.id,m.version),existing=this._items.get(k);
       if(existing&&canonical(existing.bundle)!==canonical(item.bundle))throw Error(globalThis.PlayroomMessages.text("ui.packs.828642b64148"));
@@ -225,7 +226,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       return this._persist(this._serialized(items,active,removed),()=>{
       try{this.engine.registerVersion(item.rules,{replace:true});this._items=items;this._removed=removed;return activate?this._apply(item):this._descriptor(item);}
       catch(error){this._items=priorItems;this._removed=priorRemoved;this.engine.unregisterVersion(m.id,m.version);if(previousVersion)this.engine.registerVersion(previousVersion,{replace:true});if(previousActive)this.engine.activatePack(previousActive);try{this.storage.set(before);}catch(_){}throw error;}
-      });
+      },guard);
     }
     // Synchronous staging validation registers only the exact rules version;
     // it never changes active UI/catalog or persists an unvalidated save.
